@@ -5,6 +5,7 @@ import (
 	"orca/pkg/event"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 )
 
 type BashEvent struct {
@@ -39,18 +40,20 @@ func (b BashEventHandler) Handle(ent event.Event) {
 		panic("BashEvent handler is not a BashEvent")
 	}
 
-	var content = fmt.Sprintf("# %s \n\n task id: %d \n\n %s", bashEvent.command, bashEvent.id)
+	var content = fmt.Sprintf("# %s \n\n task id: %d \n\n %s", bashEvent.command, bashEvent.id, bashEvent.content)
 
-	cmd, err := glamour.Render(content, "light")
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStyles(styles.NoTTYStyleConfig),
+		glamour.WithWordWrap(-1),
+	)
 	if err != nil {
 		panic(err)
 	}
 
-	out, err := glamour.Render(bashEvent.content, "light")
+	cmd, err := renderer.Render(content)
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println(cmd)
-	fmt.Print(out)
 }
