@@ -1,0 +1,46 @@
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama (Local)",
+      "api": "openai-completions",
+      "baseUrl": "http://localhost:11434/v1",
+      "apiKey": "ollama",
+      "models": [
+        {
+          "id": "ornith:latest",
+          "name": "ornith",
+          "contextWindow": 65536,
+          "supportsTools": true
+        },
+        {
+          "id": "ornith-1.5:9b",
+          "name": "ornith-1.5:9b",
+          "contextWindow": 65536,
+          "supportsTools": true
+        }
+      ]
+    },
+    "qwen_deepseek": {
+      "name": "deepseek-v4-flash",
+      "api": "openai-completions",
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKey": "sk-ws-H.EXMMLYE.oRvR.MEUCIQCtjI7G4uGcOLUbGDkeSmMXUNNJBTqJ00crQG09z2H-qgIgc4JXwtQY1KzIxUyJnTLuOYihujAVw8r-kRKnO3wf-us",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "name": "deepseek-v4-flash",
+          "contextWindow": 1048576,
+          "supportsTools": true,
+          "reasoning": false
+        },
+        {
+          "id": "qwen3.7-flash-2026-07-15",
+          "name": "qwen3.7-flash_snap",
+          "contextWindow": 32768,
+          "supportsTools": true,
+          "reasoning": false
+        }
+      ]
+    }
+  }
+}
