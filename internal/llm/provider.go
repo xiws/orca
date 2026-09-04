@@ -1,9 +1,11 @@
 package llm
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"orca/pkg/utils"
+)
+
+var (
+	MODEL_FILE = "models.json"
 )
 
 // ModelInfo describes a concrete model together with the connection details of
@@ -76,37 +78,15 @@ func GetProvider(providerName, modelId string) ModelInfo {
 func loadProviders() map[string]fileProvider {
 	merged := make(map[string]fileProvider)
 	// Lower priority first (~), higher priority last (project) so it overwrites.
-	for _, path := range modelsSearchPaths() {
-		for name, provider := range readModelsFile(path) {
-			merged[name] = provider
-		}
-	}
-	return merged
-}
 
-// modelsSearchPaths returns models.json candidates ordered from lowest to
-// highest priority: ~/.orca/models.json then {project}/.orca/models.json.
-func modelsSearchPaths() []string {
-	var paths []string
-	if home, err := os.UserHomeDir(); err == nil {
-		paths = append(paths, filepath.Join(home, ".orca", "models.json"))
-	}
-	if wd, err := os.Getwd(); err == nil {
-		paths = append(paths, filepath.Join(wd, ".orca", "models.json"))
-	}
-	return paths
-}
-
-// readModelsFile parses a single models.json file, returning nil when it is
-// missing or malformed so that callers can silently fall back to other sources.
-func readModelsFile(path string) map[string]fileProvider {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
 	var file modelsFile
-	if err := json.Unmarshal(data, &file); err != nil {
-		return nil
+	if err := utils.GetModel(MODEL_FILE, &file); err != nil {
+		panic(err)
 	}
-	return file.Providers
+
+	for name, provider := range file.Providers {
+		merged[name] = provider
+	}
+
+	return merged
 }

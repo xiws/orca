@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"orca/pkg/utils"
 )
 
 // Settings mirrors the structure of .orca/setting.json, one field per setting.
@@ -19,6 +17,7 @@ var settings Settings = LoadSettings()
 const (
 	KeyDefaultProvider = "defaultProvider"
 	KeyDefaultModel    = "defaultModel"
+	setting            = "setting.json"
 )
 
 // Get returns the value of the named setting, or "" when the key is unknown.
@@ -49,28 +48,10 @@ func Set(key, value string) {
 // are overwritten and a missing or malformed file is skipped.
 func LoadSettings() Settings {
 	var res Settings
-	for _, path := range settingsSearchPaths() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		_ = json.Unmarshal(data, &res)
+
+	if err := utils.GetModel(setting, &res); err != nil {
+		panic(err)
 	}
+
 	return res
-}
-
-// settingsSearchPaths returns setting.json candidates ordered from lowest to
-// highest priority: ~/.orca/setting.json then {project}/.orca/setting.json.
-func settingsSearchPaths() []string {
-	var paths []string
-
-	if wd, err := os.Getwd(); err == nil {
-		paths = append(paths, filepath.Join(wd, ".orca", "setting.json"))
-	}
-
-	if home, err := os.UserHomeDir(); err == nil {
-		paths = append(paths, filepath.Join(home, ".orca", "setting.json"))
-	}
-
-	return paths
 }

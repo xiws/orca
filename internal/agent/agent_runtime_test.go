@@ -148,10 +148,11 @@ func TestRunTaskStopsOnChildFailure(t *testing.T) {
 func TestRunTask(t *testing.T) {
 	var prompt = "give me a content for the README.md."
 	var task = NewTask(prompt)
+	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := struct {
 		ProjectPath string
 	}{
-		ProjectPath: "/Users/zhongxiwang/workspace/golang/orca",
+		ProjectPath: project_path,
 	}
 	systemPrompt := utils.GetSystemPrompt(data)
 	task.SessionInfo.AppendMessage(llm.RoleSystem, systemPrompt)

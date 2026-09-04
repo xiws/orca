@@ -20,17 +20,19 @@ import (
 // stale content, and a bash command may depend on the file a previous write
 // just created.
 type Runtime struct {
-	commands *command.CommandHandle
-	bus      event.EventPublisher
+	commands  *command.CommandHandle
+	bus       event.EventPublisher
+	workspace handler.Workspace
 }
 
 // NewRuntime wires a command registry to an event bus. The bus may be nil, in
 // which case results are only returned to the caller.
 func NewRuntime() *Runtime {
 	handle := command.NewCommandHandle()
-	if err := handler.Register(handle, handler.Workspace{
+	var work = handler.Workspace{
 		Root: utils.GetCurrentPath(),
-	}); err != nil {
+	}
+	if err := handler.Register(handle, work); err != nil {
 		panic(err)
 	}
 
