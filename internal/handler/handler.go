@@ -6,6 +6,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"orca/pkg/utils"
 
 	"orca/pkg/command"
@@ -52,6 +53,10 @@ type CommandResult struct {
 	Content string `json:"content"`
 	// Err holds a short reason and is empty when OK is true.
 	Err string `json:"err,omitempty"`
+}
+
+func (u CommandResult) String() string {
+	return fmt.Sprintf("task id:%s\ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
 }
 
 // NewResult builds a CommandResult for the given identity. A non-nil err marks

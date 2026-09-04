@@ -31,6 +31,7 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	lines := splitLines(content)
 	if len(lines) == 0 {
 		return "(empty file)", nil
@@ -43,9 +44,11 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	if end <= 0 || end > len(lines) {
 		end = len(lines)
 	}
+
 	if start > len(lines) {
 		return "", fmt.Errorf("start line %d is beyond the end of the file (%d lines)", start, len(lines))
 	}
+
 	if start > end {
 		return "", fmt.Errorf("start line %d is after end line %d", start, end)
 	}
@@ -53,14 +56,25 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	var truncated string
 	if end-start+1 > MaxReadLines {
 		last := start + MaxReadLines - 1
-		truncated = fmt.Sprintf("... stopped after %d lines, continue with \"start\": %d, \"end\": %d", MaxReadLines, last+1, end)
+		truncated = fmt.Sprintf(
+			"... stopped after %d lines, continue with \"start\": %d, \"end\": %d",
+			MaxReadLines,
+			last+1,
+			end,
+		)
 		end = last
 	}
 
 	var out strings.Builder
+
 	for number := start; number <= end; number++ {
-		fmt.Fprintf(&out, "%d\t%s\n", number, lines[number-1])
+		if opt.SetNumber {
+			fmt.Fprintf(&out, "%d\t%s\n", number, lines[number-1])
+		} else {
+			fmt.Fprintf(&out, "%s\n", lines[number-1])
+		}
 	}
+
 	out.WriteString(truncated)
 	return out.String(), nil
 }

@@ -4,10 +4,11 @@ package handler
 // through End of Filename, 1 based and inclusive. Zero means open ended, so the
 // default reads the whole file.
 type ReadOption struct {
-	Id       int64
-	Filename string
-	Start    int
-	End      int
+	Id        int64
+	Filename  string
+	Start     int
+	End       int
+	SetNumber bool
 }
 
 // GetId returns the invocation id that correlates the result with this call.

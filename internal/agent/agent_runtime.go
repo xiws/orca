@@ -3,8 +3,8 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
+	event2 "orca/internal/event"
 
 	"orca/internal/handler"
 	"orca/internal/llm"
@@ -32,11 +32,16 @@ func NewRuntime() *Runtime {
 	var work = handler.Workspace{
 		Root: utils.GetCurrentPath(),
 	}
+
 	if err := handler.Register(handle, work); err != nil {
 		panic(err)
 	}
+	bus, err := registerEvent()
+	if err != nil {
+		panic(err)
+	}
 
-	var runtime = &Runtime{commands: handle}
+	var runtime = &Runtime{commands: handle, bus: bus, workspace: work}
 	return runtime
 }
 
@@ -44,9 +49,14 @@ func NewRuntime() *Runtime {
 // if it does not exist yet, and subscribes h to eventName. Call it repeatedly to
 // attach more subscribers to the same bus; the topics are the names returned by
 // event.Event.GetName.
-func registerEvent(eventName string, h event.EventHandler) error {
+func registerEvent() (event.EventPublisher, error) {
 	bus := event.NewEventBus()
-	return bus.Subscribe(eventName, h)
+	err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{})
+	if err != nil {
+		return nil, err
+	}
+
+	return bus, nil
 }
 
 func (r *Runtime) RunTask(task Task) (error, string) {
@@ -98,16 +108,14 @@ func (r *Runtime) executeCommand(task Task, tools []llm.ToolCall) error {
 		if execErr != nil {
 			return execErr
 		}
+
 		result, ok := res.(handler.CommandResult)
 		if !ok {
 			return fmt.Errorf("agent: command %q returned an unexpected result", call.Name)
 		}
 
-		content, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		task.SessionInfo.AppendMessage(llm.RoleTool, string(content))
+		task.SessionInfo.AppendMessage(llm.RoleTool, result.String())
+		r.bus.Publish(event2.NewBashEvent(call.Name+"\t"+call.Arguments, result.Content, result.Id))
 	}
 	return nil
 }

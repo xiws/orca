@@ -146,7 +146,7 @@ func TestRunTaskStopsOnChildFailure(t *testing.T) {
 }
 
 func TestRunTask(t *testing.T) {
-	var prompt = "give me a content for the README.md."
+	var prompt = "原样输出文件内容:README.md"
 	var task = NewTask(prompt)
 	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := struct {

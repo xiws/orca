@@ -19,7 +19,7 @@ var (
 
 // Event identifies an event and its subscription topic.
 type Event interface {
-	GetId() string
+	GetId() int64
 	GetName() string
 }
 
@@ -57,8 +57,8 @@ func NewEventBus() *EventBus {
 }
 
 // Subscribe registers a handler for an event name.
-func (t *EventBus) Subscribe(eventName string, handler EventHandler) error {
-	if eventName == "" {
+func (t *EventBus) Subscribe(eventName Event, handler EventHandler) error {
+	if eventName.GetName() == "" {
 		return ErrNilEvent
 	}
 	if isNil(handler) {
@@ -70,17 +70,18 @@ func (t *EventBus) Subscribe(eventName string, handler EventHandler) error {
 	if t.closed {
 		return ErrEventBusClosed
 	}
-	for _, registered := range t.subscribers[eventName] {
+	name := eventName.GetName()
+	for _, registered := range t.subscribers[name] {
 		if sameHandler(registered, handler) {
 			return ErrDuplicateSubscription
 		}
 	}
-	t.subscribers[eventName] = append(t.subscribers[eventName], handler)
+	t.subscribers[name] = append(t.subscribers[name], handler)
 	return nil
 }
 
 // Subscriber is an alias for Subscribe, matching the event handler design draft.
-func (t *EventBus) Subscriber(eventName string, handler EventHandler) error {
+func (t *EventBus) Subscriber(eventName Event, handler EventHandler) error {
 	return t.Subscribe(eventName, handler)
 }
 
