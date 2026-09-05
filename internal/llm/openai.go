@@ -21,7 +21,7 @@ type openAIClient struct {
 
 // NewRequester builds a Requester for the resolved model based on its api type.
 // It falls back to the OpenAI-compatible client for unknown api values.
-func NewRequester(info ModelInfo) Requester {
+func NewOpenAIRequester(info ModelInfo) Requester {
 	return &openAIClient{
 		info:   info,
 		client: &http.Client{Timeout: 5 * time.Minute},
@@ -116,14 +116,17 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 		if chunk.Usage != nil {
 			result.Usage = *chunk.Usage
 		}
+
 		for _, choice := range chunk.Choices {
 			if choice.FinishReason != "" {
 				result.FinishReason = choice.FinishReason
 			}
+
 			if choice.Delta.Content != "" {
 				content.WriteString(choice.Delta.Content)
 				send(msgs, choice.Delta.Content)
 			}
+
 			for _, tc := range choice.Delta.ToolCalls {
 				target, exists := toolCalls[tc.Index]
 				if !exists {

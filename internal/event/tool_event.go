@@ -8,39 +8,38 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 )
 
-type BashEvent struct {
+type ToolEvent struct {
 	command string
 	content string
 	id      int64
 }
 
-func (e BashEvent) GetId() int64 {
+func (e ToolEvent) GetId() int64 {
 	return e.id
 }
 
-func (e BashEvent) GetName() string {
-	return "BashEvent"
+func (e ToolEvent) GetName() string {
+	return "ToolEvent"
 }
 
-func NewBashEvent(command string, content string, id int64) BashEvent {
-	return BashEvent{
+func NewToolEvent(command string, content string, id int64) ToolEvent {
+	return ToolEvent{
 		command: command,
 		content: content,
 		id:      id,
 	}
 }
 
-type BashEventHandler struct {
+type ToolEventHandler struct {
 }
 
-func (b BashEventHandler) Handle(ent event.Event) {
-
-	bashEvent, ok := ent.(BashEvent)
+func (b ToolEventHandler) Handle(ent event.Event) {
+	toolEvent, ok := ent.(ToolEvent)
 	if !ok {
-		panic("BashEvent handler is not a BashEvent")
+		panic("ToolEvent handler is not a ToolEvent")
 	}
 
-	var content = fmt.Sprintf("# %s \n\n task id: %d \n\n %s", bashEvent.command, bashEvent.id, bashEvent.content)
+	var content = fmt.Sprintf("# %s \n\n task id: %d \n----------- \n\n %s\n\n-----------", toolEvent.command, toolEvent.id, toolEvent.content)
 
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(styles.ASCIIStyleConfig),

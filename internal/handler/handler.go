@@ -56,7 +56,7 @@ type CommandResult struct {
 }
 
 func (u CommandResult) String() string {
-	return fmt.Sprintf("task id:%s\ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
+	return fmt.Sprintf("task id:%d \ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
 }
 
 // NewResult builds a CommandResult for the given identity. A non-nil err marks

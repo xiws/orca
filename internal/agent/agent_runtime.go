@@ -23,6 +23,7 @@ type Runtime struct {
 	commands  *command.CommandHandle
 	bus       event.EventPublisher
 	workspace handler.Workspace
+	msg       chan<- string
 }
 
 // NewRuntime wires a command registry to an event bus. The bus may be nil, in
@@ -40,8 +41,10 @@ func NewRuntime() *Runtime {
 	if err != nil {
 		panic(err)
 	}
+	ch := make(chan string)
 
-	var runtime = &Runtime{commands: handle, bus: bus, workspace: work}
+	var runtime = &Runtime{commands: handle, bus: bus, workspace: work, msg: ch}
+	go runtime.messageChannel(ch)
 	return runtime
 }
 
@@ -51,14 +54,18 @@ func NewRuntime() *Runtime {
 // event.Event.GetName.
 func registerEvent() (event.EventPublisher, error) {
 	bus := event.NewEventBus()
-	err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{})
-	if err != nil {
+	if err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{}); err != nil {
+		return nil, err
+	}
+
+	if err := bus.Subscribe(event2.ToolEvent{}, event2.ToolEventHandler{}); err != nil {
 		return nil, err
 	}
 
 	return bus, nil
 }
 
+// RunTask 运行任务
 func (r *Runtime) RunTask(task Task) (error, string) {
 	if task.Children != nil && len(task.Children) > 0 {
 		for _, child := range task.Children {
@@ -74,7 +81,7 @@ func (r *Runtime) RunTask(task Task) (error, string) {
 }
 
 func (r *Runtime) execute(task Task) (error, string) {
-	var requester = llm.NewRequester(task.SessionInfo.GetProvider())
+	var requester = llm.NewOpenAIRequester(task.SessionInfo.GetProvider())
 	var res = requester.Request(task.SessionInfo.Messages, nil)
 	if res.Error != nil {
 		return res.Error, ""
@@ -115,7 +122,13 @@ func (r *Runtime) executeCommand(task Task, tools []llm.ToolCall) error {
 		}
 
 		task.SessionInfo.AppendMessage(llm.RoleTool, result.String())
-		r.bus.Publish(event2.NewBashEvent(call.Name+"\t"+call.Arguments, result.Content, result.Id))
+		r.bus.Publish(event2.NewToolEvent(call.Name+"\t"+call.Arguments, result.Content, result.Id))
 	}
 	return nil
+}
+
+func (r *Runtime) messageChannel(ch <-chan string) {
+	for msg := range ch {
+		fmt.Printf("%s", msg)
+	}
 }
