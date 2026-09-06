@@ -15,10 +15,11 @@ import (
 // Names of the built-in tool commands. They are the routing names used by the
 // command registry and the value of the "command" field on the wire protocol.
 const (
-	CommandRead  = "read"
-	CommandWrite = "write"
-	CommandEdit  = "edit"
-	CommandBash  = "bash"
+	CommandRead       = "read"
+	CommandWrite      = "write"
+	CommandEdit       = "edit"
+	CommandBash       = "bash"
+	CommandCreateTask = "create_task"
 )
 
 var (
@@ -52,7 +53,13 @@ type CommandResult struct {
 	// stdout and stderr for bash, a change summary for write and edit.
 	Content string `json:"content"`
 	// Err holds a short reason and is empty when OK is true.
-	Err string `json:"err,omitempty"`
+	Err        string         `json:"err,omitempty"`
+	TaskTarget []TaskBaseInfo `json:"task_target,omitempty"`
+}
+
+type TaskBaseInfo struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 func (u CommandResult) String() string {

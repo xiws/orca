@@ -13,12 +13,13 @@ package llm
 // accepts for entries of the "tools" array today.
 const ToolType = "function"
 
-// Names of the built-in tools, matching handler.CommandRead/Write/Edit/Bash.
+// Names of the built-in tools, matching handler.CommandRead/Write/Edit/Bash/CreateTask.
 const (
-	ToolRead  = "read"
-	ToolWrite = "write"
-	ToolEdit  = "edit"
-	ToolBash  = "bash"
+	ToolRead       = "read"
+	ToolWrite      = "write"
+	ToolEdit       = "edit"
+	ToolBash       = "bash"
+	ToolCreateTask = "createtask"
 )
 
 // Tool is a single entry of the "tools" array sent with a chat completion
@@ -140,8 +141,19 @@ func BashTool() Tool {
 		}, "content"))
 }
 
+// CreateTaskTool describes the createTask command: it decomposes a high-level
+// goal into sub-tasks, runs each sub-task independently, and aggregates the
+// results back into a summary.
+func CreateTaskTool() Tool {
+	return NewTool(ToolCreateTask,
+		"Decompose a high-level goal into multiple sub-tasks, run each sub-task independently, and aggregate the results. Use this when the user's request is complex and can be broken into parallel work streams.",
+		ObjectProperty("", map[string]ToolSchema{
+			"task_target": StringProperty("The high-level goal or task and step description to decompose and execute"),
+		}, "task_target"))
+}
+
 // Tools returns the definitions of every built-in command, in the order they
 // are registered by handler.Register.
 func Tools() []Tool {
-	return []Tool{ReadTool(), WriteTool(), EditTool(), BashTool()}
+	return []Tool{ReadTool(), WriteTool(), EditTool(), BashTool(), CreateTaskTool()}
 }

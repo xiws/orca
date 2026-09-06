@@ -66,7 +66,7 @@ func registerEvent() (event.EventPublisher, error) {
 }
 
 // RunTask 运行任务
-func (r *Runtime) RunTask(task Task) (error, string) {
+func (r *Runtime) RunTask(task *Task) (error, string) {
 	if task.Children != nil && len(task.Children) > 0 {
 		for _, child := range task.Children {
 			err, msg := r.RunTask(child)
@@ -80,7 +80,7 @@ func (r *Runtime) RunTask(task Task) (error, string) {
 	return r.execute(task)
 }
 
-func (r *Runtime) execute(task Task) (error, string) {
+func (r *Runtime) execute(task *Task) (error, string) {
 	var requester = llm.NewOpenAIRequester(task.SessionInfo.GetProvider())
 	var res = requester.Request(task.SessionInfo.Messages, nil)
 	if res.Error != nil {
@@ -103,7 +103,7 @@ func (r *Runtime) execute(task Task) (error, string) {
 // turn can see what its calls produced. The result is serialized to JSON because
 // handler.CommandResult is meant to travel to the model as data, a failure
 // included, rather than as a Go error.
-func (r *Runtime) executeCommand(task Task, tools []llm.ToolCall) error {
+func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 	for _, call := range tools {
 		id := utils.GetSnowFlakeId()
 		opt, err := handler.OptionFromCall(id, call.Name, call.Arguments)
@@ -119,6 +119,20 @@ func (r *Runtime) executeCommand(task Task, tools []llm.ToolCall) error {
 		result, ok := res.(handler.CommandResult)
 		if !ok {
 			return fmt.Errorf("agent: command %q returned an unexpected result", call.Name)
+		}
+
+		var subTasks = make([]*Task, len(result.TaskTarget))
+		if result.Command == handler.CommandCreateTask {
+			for _, target := range result.TaskTarget {
+				var childTask = NewTask(target.Description, target.Title)
+				subTasks = append(subTasks, childTask)
+				err, msg := r.RunTask(childTask)
+				taskPrompt := utils.GetSubtaskPrompt(NewTaskContext(target.Description, target.Title, msg))
+				if err != nil {
+					task.SessionInfo.AppendMessage(llm.RoleAssistant, taskPrompt)
+				}
+			}
+			continue
 		}
 
 		task.SessionInfo.AppendMessage(llm.RoleTool, result.String())

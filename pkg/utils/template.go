@@ -19,3 +19,16 @@ func GetSystemPrompt(data any) string {
 
 	return buf.String()
 }
+
+func GetSubtaskPrompt(data any) string {
+	t := template.New("subtask")
+	template.Must(t.Parse(assets.SubtaskPrompt))
+	var buf strings.Builder
+
+	err := t.Execute(&buf, data)
+	if err != nil {
+		panic(err)
+	}
+
+	return buf.String()
+}

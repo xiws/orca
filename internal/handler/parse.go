@@ -25,7 +25,7 @@ var (
 // Command names accepted on the wire, exposed so the prompt and the parser can
 // never drift apart.
 func Commands() []string {
-	return []string{CommandRead, CommandWrite, CommandEdit, CommandBash}
+	return []string{CommandRead, CommandWrite, CommandEdit, CommandBash, CommandCreateTask}
 }
 
 // Parse decodes one command object into the option of its handler.
@@ -143,6 +143,15 @@ func OptionFromCall(id int64, name, arguments string) (command.CommandOption, er
 // parseOption decodes the parameter object of a known command.
 func parseOption(name string, payload json.RawMessage) (command.CommandOption, error) {
 	switch name {
+	case CommandCreateTask:
+		var params struct {
+			Id         json.RawMessage `json:"id"`
+			TaskTarget string          `json:"task_target"`
+		}
+		if err := json.Unmarshal(payload, &params); err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", ErrMalformedCommand, name, err)
+		}
+		return NewCreateTaskOption(parseId(params.Id), params.TaskTarget), nil
 	case CommandRead:
 		var params struct {
 			Id       json.RawMessage `json:"id"`
@@ -197,6 +206,8 @@ func setId(opt command.CommandOption, id int64) {
 		return
 	}
 	switch target := opt.(type) {
+	case *CreateTaskOption:
+		target.Id = id
 	case *ReadOption:
 		target.Id = id
 	case *WriteOption:

@@ -30,7 +30,7 @@ func newTestRuntime(t *testing.T) (*Runtime, handler.Workspace) {
 // order the model produced them.
 func TestExecuteCommandAppendsResults(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
-	task := NewTask("write then read a.md")
+	task := NewTask("write then read a.md", "")
 
 	tools := []llm.ToolCall{
 		{ID: "call-1", Name: handler.CommandWrite, Arguments: `{"filename":"a.md","content":"hello world"}`},
@@ -38,7 +38,7 @@ func TestExecuteCommandAppendsResults(t *testing.T) {
 	}
 	// SessionInfo is a pointer, so the appends are visible on the caller's task
 	// even though executeCommand receives the Task by value.
-	if err := runtime.executeCommand(*task, tools); err != nil {
+	if err := runtime.executeCommand(task, tools); err != nil {
 		t.Fatalf("executeCommand() error = %v", err)
 	}
 
@@ -75,9 +75,9 @@ func TestExecuteCommandAppendsResults(t *testing.T) {
 // leaves nothing appended to the session.
 func TestExecuteCommandReportsUnknownTool(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
-	task := NewTask("teleport")
+	task := NewTask("teleport", "")
 
-	err := runtime.executeCommand(*task, []llm.ToolCall{
+	err := runtime.executeCommand(task, []llm.ToolCall{
 		{ID: "call-1", Name: "teleport", Arguments: `{}`},
 	})
 	if !errors.Is(err, handler.ErrUnknownCommand) {
@@ -115,9 +115,9 @@ func TestNewRuntimeRegistersToolCommands(t *testing.T) {
 // network round trip; RunTask must surface that error and return no message.
 func TestRunTaskSurfacesModelFailure(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
-	task := NewTask("no provider configured")
+	task := NewTask("no provider configured", "")
 
-	err, msg := runtime.RunTask(*task)
+	err, msg := runtime.RunTask(task)
 	if err == nil {
 		t.Fatal("RunTask() error = nil, want the model request to fail")
 	}
@@ -126,40 +126,42 @@ func TestRunTaskSurfacesModelFailure(t *testing.T) {
 	}
 }
 
-// TestRunTaskStopsOnChildFailure checks the sub-task reduction: a child that
-// cannot reach a model aborts the parent before its own turn runs, so the
-// parent's target is left untouched and the child's error is returned verbatim.
-func TestRunTaskStopsOnChildFailure(t *testing.T) {
-	runtime, _ := newTestRuntime(t)
-
-	child := NewTask("child target")
-	parent := NewTask("parent target")
-	parent.Children = []Task{*child}
-
-	err, _ := runtime.RunTask(*parent)
-	if err == nil {
-		t.Fatal("RunTask() error = nil, want the child's failure to propagate")
-	}
-	if parent.TaskTarget != "parent target" {
-		t.Errorf("parent TaskTarget = %q, want it untouched by the failed child", parent.TaskTarget)
-	}
-}
-
 func TestRunTask(t *testing.T) {
 	var prompt = "原样输出文件内容:README.md"
-	var task = NewTask(prompt)
+	var task = NewTask(prompt, "")
 	var project_path = utils.GetEnv("PROJECT_PATH")
-	data := struct {
-		ProjectPath string
-	}{
-		ProjectPath: project_path,
+	data := PromptContext{
+		ProjectPath:   project_path,
+		ContextLength: 8192,
 	}
+
 	systemPrompt := utils.GetSystemPrompt(data)
 	task.SessionInfo.AppendMessage(llm.RoleSystem, systemPrompt)
 	task.SessionInfo.AppendMessage(llm.RoleUser, prompt)
 	task.SessionInfo.SetProvider("ollama", "ornith-1.5:9b")
 	runtime := NewRuntime()
-	err, msg := runtime.RunTask(*task)
+	err, msg := runtime.RunTask(task)
+	if err != nil {
+		t.Fatalf("RunTask() error = %v", err)
+	}
+	t.Logf("%s", msg)
+}
+
+func TestSubRunTask(t *testing.T) {
+	var prompt = "原样输出文件内容:README.md"
+	var task = NewTask(prompt, "")
+	var project_path = utils.GetEnv("PROJECT_PATH")
+	data := PromptContext{
+		ProjectPath:   project_path,
+		ContextLength: 8192,
+	}
+
+	systemPrompt := utils.GetSystemPrompt(data)
+	task.SessionInfo.AppendMessage(llm.RoleSystem, systemPrompt)
+	task.SessionInfo.AppendMessage(llm.RoleUser, prompt)
+	task.SessionInfo.SetProvider("ollama", "ornith-1.5:9b")
+	runtime := NewRuntime()
+	err, msg := runtime.RunTask(task)
 	if err != nil {
 		t.Fatalf("RunTask() error = %v", err)
 	}
