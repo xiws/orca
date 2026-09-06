@@ -2,6 +2,8 @@ package handler
 
 import (
 	"fmt"
+	"orca/internal/event"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -22,7 +24,10 @@ func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandEdit), nil
 	}
+	var shell = t.getShell(opt)
+	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Id))
 	summary, err := t.edit(opt)
+	t.Publisher.Publish(event.NewToolAfterEvent(shell, summary, opt.Id))
 	return nil, ResultFor(opt, summary, err)
 }
 
@@ -58,6 +63,42 @@ func (t EditHandler) edit(opt *EditOption) (string, error) {
 	}
 	return fmt.Sprintf("edited %s: %s (%d -> %d lines)",
 		resolved, strings.Join(summaries, ", "), len(splitLines(original)), len(splitLines(updated))), nil
+}
+
+func (t EditHandler) getShell(opt *EditOption) string {
+	if opt == nil {
+		return ""
+	}
+
+	args := []string{"edit", opt.Filename}
+
+	for _, fragment := range opt.Contents {
+		if fragment.OldString != "" {
+			args = append(args, "--old-string", fragment.OldString)
+		}
+
+		if fragment.NewString != "" {
+			args = append(args, "--new-string", fragment.NewString)
+		}
+
+		if fragment.ReplaceAll {
+			args = append(args, "--replace-all")
+		}
+
+		if fragment.Start != 0 {
+			args = append(args, "--start", strconv.Itoa(fragment.Start))
+		}
+
+		if fragment.End != 0 {
+			args = append(args, "--end", strconv.Itoa(fragment.End))
+		}
+
+		if fragment.Content != "" {
+			args = append(args, "--content", fragment.Content)
+		}
+	}
+
+	return strings.Join(args, " ")
 }
 
 // applyFragment applies one replacement to content and returns the new content

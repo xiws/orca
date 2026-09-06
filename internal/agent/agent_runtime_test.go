@@ -127,7 +127,7 @@ func TestRunTaskSurfacesModelFailure(t *testing.T) {
 }
 
 func TestRunTask(t *testing.T) {
-	var prompt = "原样输出文件内容:README.md"
+	var prompt = "原样输出文件内容:go.mod"
 	var task = NewTask(prompt, "")
 	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := PromptContext{
@@ -140,15 +140,14 @@ func TestRunTask(t *testing.T) {
 	task.SessionInfo.AppendMessage(llm.RoleUser, prompt)
 	task.SessionInfo.SetProvider("ollama", "ornith-1.5:9b")
 	runtime := NewRuntime()
-	err, msg := runtime.RunTask(task)
+	err, _ := runtime.RunTask(task)
 	if err != nil {
 		t.Fatalf("RunTask() error = %v", err)
 	}
-	t.Logf("%s", msg)
 }
 
 func TestSubRunTask(t *testing.T) {
-	var prompt = "./internal/handler 目录下的read和bash命令，如果读取到的文件太长，则后续添加到prompt的时候会超出上下文，这时候直接不返回读取的信息改为返回:fail command: read filename 超长，文件多少行多少字"
+	var prompt = "./internal/handler/read.go 目录下的read命令，如果读取到的文件太长，则后续添加到prompt的时候会超出上下文，这时候直接不返回读取的信息改为返回:fail command: read filename 超长，文件多少行多少字"
 	var task = NewTask(prompt, "")
 	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := PromptContext{

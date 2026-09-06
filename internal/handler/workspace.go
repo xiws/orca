@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"orca/pkg/event"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,8 @@ type Workspace struct {
 	// Root is the directory relative paths are resolved against and the only
 	// tree file commands may modify. An empty Root falls back to the process
 	// working directory.
-	Root string
+	Root      string
+	Publisher event.EventPublisher
 }
 
 // Resolve turns a file name coming from a command into an absolute path.

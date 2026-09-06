@@ -99,6 +99,7 @@ func Register(handle *command.CommandHandle, ws Workspace) error {
 		{&EditOption{}, EditHandler{Workspace: ws}},
 		{&BashOption{}, BashHandler{Workspace: ws}},
 	}
+
 	for _, entry := range entries {
 		if err := handle.Register(entry.option, entry.handler); err != nil {
 			return err

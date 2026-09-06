@@ -8,38 +8,36 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 )
 
-type ToolEvent struct {
+type ToolAfterEvent struct {
 	command string
 	content string
 	id      int64
 }
 
-func (e ToolEvent) GetId() int64 {
+func (e ToolAfterEvent) GetId() int64 {
 	return e.id
 }
 
-func (e ToolEvent) GetName() string {
-	return "ToolEvent"
+func (e ToolAfterEvent) GetName() string {
+	return "ToolAfterEvent"
 }
 
-func NewToolEvent(command string, content string, id int64) ToolEvent {
-	return ToolEvent{
+func NewToolAfterEvent(command string, content string, id int64) ToolAfterEvent {
+	return ToolAfterEvent{
 		command: command,
 		content: content,
 		id:      id,
 	}
 }
 
-type ToolEventHandler struct {
+type ToolAfterEventHandler struct {
 }
 
-func (b ToolEventHandler) Handle(ent event.Event) {
-	toolEvent, ok := ent.(ToolEvent)
+func (b ToolAfterEventHandler) Handle(ent event.Event) {
+	toolEvent, ok := ent.(ToolAfterEvent)
 	if !ok {
 		panic("ToolEvent handler is not a ToolEvent")
 	}
-
-	var content = fmt.Sprintf("# %s \n\n task id: %d \n----------- \n\n %s\n\n-----------", toolEvent.command, toolEvent.id, toolEvent.content)
 
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(styles.ASCIIStyleConfig),
@@ -50,7 +48,7 @@ func (b ToolEventHandler) Handle(ent event.Event) {
 		panic(err)
 	}
 
-	cmd, err := renderer.Render(content)
+	cmd, err := renderer.Render(toolEvent.content)
 	if err != nil {
 		panic(err)
 	}

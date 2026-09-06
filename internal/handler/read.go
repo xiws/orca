@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"orca/internal/event"
 	"strings"
 
 	"orca/pkg/command"
@@ -22,7 +23,11 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandRead), nil
 	}
+
+	var shell = t.getShell(opt)
+	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Id))
 	content, err := t.read(opt)
+	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, opt.Id))
 	return nil, ResultFor(opt, content, err)
 }
 
@@ -77,4 +82,14 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 
 	out.WriteString(truncated)
 	return out.String(), nil
+}
+
+func (t ReadHandler) getShell(opt *ReadOption) string {
+	var cmd = fmt.Sprintf("read %s", opt.Filename)
+	if opt.SetNumber {
+
+		cmd = fmt.Sprintf("%s-%d:%d", cmd, opt.Start, opt.End)
+	}
+
+	return cmd
 }

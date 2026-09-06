@@ -20,7 +20,7 @@ import (
 // stale content, and a bash command may depend on the file a previous write
 // just created.
 type Runtime struct {
-	commands  *command.CommandHandle
+	commands  command.Command
 	bus       event.EventPublisher
 	workspace handler.Workspace
 	msg       chan<- string
@@ -29,18 +29,22 @@ type Runtime struct {
 // NewRuntime wires a command registry to an event bus. The bus may be nil, in
 // which case results are only returned to the caller.
 func NewRuntime() *Runtime {
-	handle := command.NewCommandHandle()
-	var work = handler.Workspace{
-		Root: utils.GetCurrentPath(),
-	}
 
-	if err := handler.Register(handle, work); err != nil {
-		panic(err)
-	}
 	bus, err := registerEvent()
 	if err != nil {
 		panic(err)
 	}
+
+	var work = handler.Workspace{
+		Root:      utils.GetCurrentPath(),
+		Publisher: bus,
+	}
+
+	handle := command.NewCommandHandle()
+	if err := handler.Register(handle, work); err != nil {
+		panic(err)
+	}
+
 	ch := make(chan string)
 
 	var runtime = &Runtime{commands: handle, bus: bus, workspace: work, msg: ch}
@@ -58,7 +62,15 @@ func registerEvent() (event.EventPublisher, error) {
 		return nil, err
 	}
 
-	if err := bus.Subscribe(event2.ToolEvent{}, event2.ToolEventHandler{}); err != nil {
+	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
+		return nil, err
+	}
+
+	if err := bus.Subscribe(event2.ToolBeforeEvent{}, event2.ToolEventBeforeHandler{}); err != nil {
+		return nil, err
+	}
+
+	if err := bus.Subscribe(event2.TaskComplateEvent{}, event2.TaskComplateEventHandler{}); err != nil {
 		return nil, err
 	}
 
@@ -77,7 +89,12 @@ func (r *Runtime) RunTask(task *Task) (error, string) {
 		}
 	}
 
-	return r.execute(task)
+	var err, result = r.execute(task)
+	if err != nil {
+		return err, result
+	}
+	r.bus.Publish(event2.NewTaskComplateEvent(result, task.Id))
+	return err, result
 }
 
 func (r *Runtime) execute(task *Task) (error, string) {
@@ -136,7 +153,6 @@ func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 		}
 
 		task.SessionInfo.AppendMessage(llm.RoleTool, result.String())
-		r.bus.Publish(event2.NewToolEvent(call.Name+"\t"+call.Arguments, result.Content, result.Id))
 	}
 	return nil
 }
