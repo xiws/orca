@@ -106,7 +106,7 @@ func (r *Runtime) execute(task *Task) (error, string) {
 func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 	for _, call := range tools {
 		id := utils.GetSnowFlakeId()
-		opt, err := handler.OptionFromCall(id, call.Name, call.Arguments)
+		opt, err := OptionFromCall(id, call.Name, call.Arguments)
 		if err != nil {
 			return err
 		}

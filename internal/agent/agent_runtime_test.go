@@ -80,8 +80,8 @@ func TestExecuteCommandReportsUnknownTool(t *testing.T) {
 	err := runtime.executeCommand(task, []llm.ToolCall{
 		{ID: "call-1", Name: "teleport", Arguments: `{}`},
 	})
-	if !errors.Is(err, handler.ErrUnknownCommand) {
-		t.Fatalf("executeCommand() error = %v, want %v", err, handler.ErrUnknownCommand)
+	if !errors.Is(err, ErrUnknownCommand) {
+		t.Fatalf("executeCommand() error = %v, want %v", err, ErrUnknownCommand)
 	}
 	if len(task.SessionInfo.Messages) != 0 {
 		t.Errorf("recorded %d messages, want none after a failed call", len(task.SessionInfo.Messages))
@@ -99,7 +99,7 @@ func TestNewRuntimeRegistersToolCommands(t *testing.T) {
 		// An empty payload keeps each handler from touching the file system: the
 		// command is dispatched and fails as a business result rather than with
 		// ErrCommandNotFound, which is exactly what proves it is registered.
-		opt, err := handler.OptionFromCall(1, name, `{}`)
+		opt, err := OptionFromCall(1, name, `{}`)
 		if err != nil {
 			t.Fatalf("OptionFromCall(%q) error = %v", name, err)
 		}
@@ -148,7 +148,7 @@ func TestRunTask(t *testing.T) {
 }
 
 func TestSubRunTask(t *testing.T) {
-	var prompt = "原样输出文件内容:README.md"
+	var prompt = "./internal/handler 目录下的read和bash命令，如果读取到的文件太长，则后续添加到prompt的时候会超出上下文，这时候直接不返回读取的信息改为返回:fail command: read filename 超长，文件多少行多少字"
 	var task = NewTask(prompt, "")
 	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := PromptContext{
