@@ -39,5 +39,5 @@ func NewTaskContext(desc, title, result string) TaskContext {
 
 type PromptContext struct {
 	ProjectPath   string
-	ContextLength int64
+	ContextLength int
 }

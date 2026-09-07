@@ -34,7 +34,20 @@ func CreateTask(args *CliArgs, runtime *agent.Runtime) *agent.Task {
 	}
 
 	if args.SystemPrompt != "" {
-		task.SessionInfo.AppendMessage(llm.RoleSystem, readTxt(args.SystemPrompt, runtime))
+		buffer, err := os.ReadFile(args.SystemPrompt)
+		if err != nil {
+			panic(err)
+		}
+
+		task.SessionInfo.AppendMessage(llm.RoleSystem, string(buffer))
+	} else {
+		data := agent.PromptContext{
+			ProjectPath:   utils.GetCurrentPath(),
+			ContextLength: task.SessionInfo.Provider.ContextWindow,
+		}
+
+		var defaultPrompt = utils.GetSystemPrompt(data)
+		task.SessionInfo.AppendMessage(llm.RoleSystem, defaultPrompt)
 	}
 
 	if args.Files != nil && len(args.Files) > 0 {
