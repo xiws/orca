@@ -49,6 +49,11 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 	if strings.TrimSpace(opt.Content) == "" {
 		return "", ErrEmptyCommand
 	}
+
+	if err := validateCommand(opt.Content); err != nil {
+		return "", err
+	}
+
 	dir, err := t.workdir(opt.Workdir)
 	if err != nil {
 		return "", err

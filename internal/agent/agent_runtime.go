@@ -97,6 +97,11 @@ func (r *Runtime) RunTask(task *Task) (error, string) {
 	return err, result
 }
 
+// ExecuteCommand execute command
+func (r *Runtime) ExecuteCommand(opt command.CommandOption) (error, any) {
+	return r.commands.Execute(opt)
+}
+
 func (r *Runtime) execute(task *Task) (error, string) {
 	var requester = llm.NewOpenAIRequester(task.SessionInfo.GetProvider())
 	var res = requester.Request(task.SessionInfo.Messages, nil)

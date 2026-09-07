@@ -19,16 +19,16 @@ type ReadHandler struct {
 
 // Handle returns the requested line range of a file, prefixed by line numbers.
 func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
-	opt, ok := cmd.(*ReadOption)
+	readOption, ok := cmd.(*ReadOption)
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandRead), nil
 	}
 
-	var shell = t.getShell(opt)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Id))
-	content, err := t.read(opt)
-	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, opt.Id))
-	return nil, ResultFor(opt, content, err)
+	var shell = t.getShell(readOption)
+	t.Publisher.Publish(event.NewToolBeforeEvent(shell, readOption.Id))
+	content, err := t.read(readOption)
+	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, readOption.Id))
+	return nil, ResultFor(readOption, content, err)
 }
 
 func (t ReadHandler) read(opt *ReadOption) (string, error) {

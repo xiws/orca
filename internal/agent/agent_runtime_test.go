@@ -149,9 +149,9 @@ func TestRunTask(t *testing.T) {
 func TestSubRunTask(t *testing.T) {
 	var prompt = "./internal/handler/read.go 目录下的read命令，如果读取到的文件太长，则后续添加到prompt的时候会超出上下文，这时候直接不返回读取的信息改为返回:fail command: read filename 超长，文件多少行多少字"
 	var task = NewTask(prompt, "")
-	var project_path = utils.GetEnv("PROJECT_PATH")
+	var projectPath = utils.GetEnv("PROJECT_PATH")
 	data := PromptContext{
-		ProjectPath:   project_path,
+		ProjectPath:   projectPath,
 		ContextLength: 8192,
 	}
 
