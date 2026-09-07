@@ -109,6 +109,13 @@ func (r *Runtime) execute(task *Task) (error, string) {
 		return res.Error, ""
 	}
 
+	// 累计 token 消耗并打印使用情况
+	task.SessionInfo.AddUsage(res.Usage)
+	contextWindow := task.SessionInfo.Provider.ContextWindow
+	fmt.Printf("\033[38;5;243m[Token] 本次: prompt=%d, completion=%d, total=%d | 累计: %d/%d\033[0m\n",
+		res.Usage.PromptTokens, res.Usage.CompletionTokens, res.Usage.TotalTokens,
+		task.SessionInfo.TotalUsage.TotalTokens, contextWindow)
+
 	if res.FinishReason == "tool_calls" {
 		if err := r.executeCommand(task, res.ToolCalls); err != nil {
 			return err, ""
@@ -132,6 +139,9 @@ func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 		if err != nil {
 			return err
 		}
+
+		// 将 goal 从 ToolCall 传入 option，供 handler 发布 ToolBeforeEvent 时使用
+		setGoal(opt, call.Goal)
 
 		execErr, res := r.commands.Execute(opt)
 		if execErr != nil {

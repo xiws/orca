@@ -214,6 +214,26 @@ func setId(opt command.CommandOption, id int64) {
 	}
 }
 
+// setGoal writes the goal into an option, so the handler can publish it
+// alongside the ToolBeforeEvent.
+func setGoal(opt command.CommandOption, goal string) {
+	if goal == "" {
+		return
+	}
+	switch target := opt.(type) {
+	case *handler.CreateTaskOption:
+		target.Goal = goal
+	case *handler.ReadOption:
+		target.Goal = goal
+	case *handler.WriteOption:
+		target.Goal = goal
+	case *handler.EditOption:
+		target.Goal = goal
+	case *handler.BashOption:
+		target.Goal = goal
+	}
+}
+
 // parseId decodes an "id" field into the int64 the options carry. A model may
 // spell it either as a number or as a quoted number, so both are accepted; a
 // missing or unreadable one, a call id such as "call-1" included, yields 0 so

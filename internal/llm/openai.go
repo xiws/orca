@@ -148,7 +148,7 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 	}
 
 	result.Content = content.String()
-	result.ToolCalls = orderedToolCalls(toolCalls)
+	result.ToolCalls = extractToolGoals(orderedToolCalls(toolCalls))
 	return result
 }
 
@@ -215,6 +215,39 @@ func orderedToolCalls(toolCalls map[int]*ToolCall) []ToolCall {
 		ordered = append(ordered, *toolCalls[index])
 	}
 	return ordered
+}
+
+// extractToolGoals extracts the "goal" field from each tool call's arguments
+// JSON, moving it into the Goal field and removing it from Arguments so it does
+// not interfere with command parsing.
+func extractToolGoals(calls []ToolCall) []ToolCall {
+	for i := range calls {
+		goal, cleaned := extractGoal(calls[i].Arguments)
+		calls[i].Goal = goal
+		calls[i].Arguments = cleaned
+	}
+	return calls
+}
+
+// extractGoal pulls a "goal" key out of a JSON arguments string, returning
+// the goal value and the remaining JSON with that key removed.
+func extractGoal(arguments string) (string, string) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(arguments), &fields); err != nil {
+		return "", arguments
+	}
+	var goal string
+	if raw, ok := fields["goal"]; ok {
+		if err := json.Unmarshal(raw, &goal); err != nil {
+			return "", arguments
+		}
+		delete(fields, "goal")
+	}
+	cleaned, err := json.Marshal(fields)
+	if err != nil {
+		return goal, arguments
+	}
+	return goal, string(cleaned)
 }
 
 // send forwards a chunk to msgs, ignoring a nil channel.

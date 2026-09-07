@@ -18,6 +18,7 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments string
+	Goal      string // AI 调用此工具的目的说明
 }
 
 // Usage reports token consumption for a request.

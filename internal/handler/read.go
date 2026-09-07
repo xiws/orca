@@ -25,7 +25,7 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	}
 
 	var shell = t.getShell(readOption)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, readOption.Id))
+	t.Publisher.Publish(event.NewToolBeforeEvent(shell, readOption.Goal, readOption.Id))
 	content, err := t.read(readOption)
 	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, readOption.Id))
 	return nil, ResultFor(readOption, content, err)

@@ -11,6 +11,7 @@ type Session struct {
 	ProjectPath string            `json:"project_path"` // project path
 	Provider    llm.ModelInfo     `json:"provider"`     // model provider
 	Id          int64             `json:"id"`           // id
+	TotalUsage  llm.Usage         `json:"total_usage"`  // 累计 token 消耗
 }
 
 func NewSession() *Session {
@@ -50,4 +51,13 @@ func (s *Session) AppendMessage(role, msg string) {
 		CreateTime: time.Now().Unix(),
 	}
 	s.Messages = append(s.Messages, chat)
+}
+
+// AddUsage accumulates the token usage from a single LLM request into the
+// session-level total, so the caller can track cumulative context consumption
+// against the model's context window.
+func (s *Session) AddUsage(usage llm.Usage) {
+	s.TotalUsage.PromptTokens += usage.PromptTokens
+	s.TotalUsage.CompletionTokens += usage.CompletionTokens
+	s.TotalUsage.TotalTokens += usage.TotalTokens
 }

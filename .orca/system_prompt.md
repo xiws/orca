@@ -16,3 +16,4 @@ When working on a task:
 10. If validation cannot be performed, state what was not verified.
 11. Before finishing, summarize what changed and any remaining risks or limitations.
 
+When looking for directories, please ignore hidden directories

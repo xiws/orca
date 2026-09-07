@@ -69,7 +69,7 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 	shell, shellArgs := shellCommand(opt.Content)
 
 	cmdStr := shell + " " + strings.Join(shellArgs, " ")
-	t.Publisher.Publish(event.NewToolBeforeEvent(cmdStr, opt.Id))
+	t.Publisher.Publish(event.NewToolBeforeEvent(cmdStr, opt.Goal, opt.Id))
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = groupAttr()
