@@ -90,11 +90,10 @@ func ReadTool() Tool {
 	return NewTool(ToolRead,
 		"Read a file from the workspace and return it with 1 based line numbers. Omit start and end to read the whole file.",
 		ObjectProperty("", map[string]ToolSchema{
-			"goal":     StringProperty("Briefly explain why you are calling this tool and what you expect to achieve"),
 			"filename": StringProperty("Absolute or workspace-relative path of the file to read"),
 			"start":    IntegerProperty("First line to return, 1 based and inclusive; defaults to the first line"),
 			"end":      IntegerProperty("Last line to return, 1 based and inclusive; defaults to the last line"),
-		}, "goal", "filename"))
+		}, "filename"))
 }
 
 // WriteTool describes the write command: it rebuilds a file from scratch,
@@ -104,10 +103,9 @@ func WriteTool() Tool {
 	return NewTool(ToolWrite,
 		"Create or overwrite a file with the given content, creating missing parent directories. Everything not present in content is lost; prefer edit for files that already exist.",
 		ObjectProperty("", map[string]ToolSchema{
-			"goal":     StringProperty("Briefly explain why you are calling this tool and what you expect to achieve"),
 			"filename": StringProperty("Absolute or workspace-relative path of the file to write"),
 			"content":  StringProperty("Full new content of the file"),
-		}, "goal", "filename", "content"))
+		}, "filename", "content"))
 }
 
 // EditTool describes the edit command: a list of fragments applied to a file in
@@ -125,10 +123,9 @@ func EditTool() Tool {
 	return NewTool(ToolEdit,
 		"Apply one or more replacements to an existing file. Fragments are applied in order and the file is only written when every one of them matches.",
 		ObjectProperty("", map[string]ToolSchema{
-			"goal":     StringProperty("Briefly explain why you are calling this tool and what you expect to achieve"),
 			"filename": StringProperty("Absolute or workspace-relative path of the file to edit"),
 			"contents": ArrayProperty("Fragments to apply, in order", fragment),
-		}, "goal", "filename", "contents"))
+		}, "filename", "contents"))
 }
 
 // BashTool describes the bash command: it runs a command line in a shell,
@@ -138,11 +135,10 @@ func BashTool() Tool {
 	return NewTool(ToolBash,
 		"Run a command line in a shell and return stdout and stderr merged. The command is killed and reported as failed once timeout elapses.",
 		ObjectProperty("", map[string]ToolSchema{
-			"goal":    StringProperty("Briefly explain why you are calling this tool and what you expect to achieve"),
 			"content": StringProperty("The command line to run"),
 			"workdir": StringProperty("Absolute or workspace-relative directory to run the command in; defaults to the workspace root"),
 			"timeout": IntegerProperty("Seconds the command may run before it is killed; defaults to 60"),
-		}, "goal", "content"))
+		}, "content"))
 }
 
 // CreateTaskTool describes the createTask command: it decomposes a high-level
@@ -152,9 +148,8 @@ func CreateTaskTool() Tool {
 	return NewTool(ToolCreateTask,
 		"Decompose a high-level goal into multiple sub-tasks, run each sub-task independently, and aggregate the results. Use this when the user's request is complex and can be broken into parallel work streams.",
 		ObjectProperty("", map[string]ToolSchema{
-			"goal":        StringProperty("Briefly explain why you are calling this tool and what you expect to achieve"),
 			"task_target": StringProperty("The high-level goal or task and step description to decompose and execute"),
-		}, "goal", "task_target"))
+		}, "task_target"))
 }
 
 // Tools returns the definitions of every built-in command, in the order they

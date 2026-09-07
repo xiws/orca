@@ -25,7 +25,7 @@ func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandEdit), nil
 	}
 	var shell = t.getShell(opt)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Goal, opt.Id))
+	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
 	summary, err := t.edit(opt)
 	t.Publisher.Publish(event.NewToolAfterEvent(shell, summary, opt.Id))
 	return nil, ResultFor(opt, summary, err)

@@ -140,8 +140,8 @@ func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 			return err
 		}
 
-		// 将 goal 从 ToolCall 传入 option，供 handler 发布 ToolBeforeEvent 时使用
-		setGoal(opt, call.Goal)
+		// 将 reasoning 从 ToolCall 传入 option，供 handler 发布 ToolBeforeEvent 时使用
+		setReasoning(opt, call.Reasoning)
 
 		execErr, res := r.commands.Execute(opt)
 		if execErr != nil {

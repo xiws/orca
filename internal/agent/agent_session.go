@@ -2,6 +2,7 @@ package agent
 
 import (
 	"orca/internal/llm"
+	"orca/internal/tool"
 	"orca/pkg/utils"
 	"time"
 )
@@ -16,8 +17,8 @@ type Session struct {
 
 func NewSession() *Session {
 	var prompts = make([]llm.ChatMessage, 0)
-	providerName := Get(KeyDefaultProvider)
-	modelId := Get(KeyDefaultModel)
+	providerName := tool.Get(tool.KeyDefaultProvider)
+	modelId := tool.Get(tool.KeyDefaultModel)
 	var defaultProvider = llm.GetProvider(providerName, modelId)
 	return &Session{
 		Messages:    prompts,

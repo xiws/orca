@@ -1,4 +1,5 @@
 {
   "defaultProvider": "ollama",
-  "defaultModel": "ornith-1.5:9b"
+  "defaultModel": "ornith-1.5:9b",
+  "debug": "false"
 }

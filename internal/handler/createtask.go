@@ -10,7 +10,7 @@ import (
 // each one independently, and then aggregate the results.
 type CreateTaskOption struct {
 	Id         int64
-	Goal       string
+	Reasoning  string
 	TaskTarget []TaskBaseInfo `json:"task_target"`
 }
 

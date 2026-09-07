@@ -214,23 +214,23 @@ func setId(opt command.CommandOption, id int64) {
 	}
 }
 
-// setGoal writes the goal into an option, so the handler can publish it
-// alongside the ToolBeforeEvent.
-func setGoal(opt command.CommandOption, goal string) {
-	if goal == "" {
+// setReasoning writes the reasoning into an option, so the handler can publish
+// it alongside the ToolBeforeEvent.
+func setReasoning(opt command.CommandOption, reasoning string) {
+	if reasoning == "" {
 		return
 	}
 	switch target := opt.(type) {
 	case *handler.CreateTaskOption:
-		target.Goal = goal
+		target.Reasoning = reasoning
 	case *handler.ReadOption:
-		target.Goal = goal
+		target.Reasoning = reasoning
 	case *handler.WriteOption:
-		target.Goal = goal
+		target.Reasoning = reasoning
 	case *handler.EditOption:
-		target.Goal = goal
+		target.Reasoning = reasoning
 	case *handler.BashOption:
-		target.Goal = goal
+		target.Reasoning = reasoning
 	}
 }
 

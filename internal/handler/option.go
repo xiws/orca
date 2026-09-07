@@ -5,7 +5,7 @@ package handler
 // default reads the whole file.
 type ReadOption struct {
 	Id        int64
-	Goal      string
+	Reasoning string
 	Filename  string
 	Start     int
 	End       int
@@ -22,7 +22,7 @@ func (ReadOption) GetName() string { return CommandRead }
 // Content, creating the file and its parent directories when missing.
 type WriteOption struct {
 	Id       int64
-	Goal     string
+	Reasoning string
 	Filename string
 	Content  string
 }
@@ -37,7 +37,7 @@ func (WriteOption) GetName() string { return CommandWrite }
 // in order, each fragment receiving the output of the previous one.
 type EditOption struct {
 	Id       int64
-	Goal     string
+	Reasoning string
 	Filename string
 	Contents []EditFragment
 }
@@ -65,7 +65,7 @@ type EditFragment struct {
 // Timeout means DefaultBashTimeout seconds.
 type BashOption struct {
 	Id      int64
-	Goal    string
+	Reasoning string
 	Content string
 	Workdir string
 	Timeout int

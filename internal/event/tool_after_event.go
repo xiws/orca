@@ -2,6 +2,7 @@ package event
 
 import (
 	"fmt"
+	"orca/internal/tool"
 	"orca/pkg/event"
 	"strings"
 
@@ -35,6 +36,11 @@ type ToolAfterEventHandler struct {
 }
 
 func (b ToolAfterEventHandler) Handle(ent event.Event) {
+
+	if tool.Get(tool.KeyDebug) == "false" {
+		return
+	}
+
 	toolEvent, ok := ent.(ToolAfterEvent)
 	if !ok {
 		panic("ToolEvent handler is not a ToolEvent")
@@ -72,5 +78,5 @@ func (b ToolAfterEventHandler) markdown(ctx string) {
 		panic(err)
 	}
 
-	fmt.Println(cmd)
+	fmt.Print(cmd)
 }

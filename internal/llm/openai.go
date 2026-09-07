@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
+	"orca/internal/tool"
 	"sort"
 	"strings"
 	"time"
@@ -46,6 +48,7 @@ type chatRequest struct {
 
 // streamDelta is the incremental payload carried by one streamed chunk.
 type streamDelta struct {
+	Reasoning string `json:"reasoning"`
 	Content   string `json:"content"`
 	ToolCalls []struct {
 		Index    int    `json:"index"`
@@ -83,6 +86,13 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 		req.Header.Set("Authorization", "Bearer "+c.info.APIKey)
 	}
 
+	if tool.Get(tool.KeyDebug) == "true" {
+		requestDump, err := httputil.DumpRequestOut(req, true)
+		if err == nil {
+			fmt.Printf("========== HTTP REQUEST ==========\n%s\n", requestDump)
+		}
+	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		result.Error = err
@@ -98,6 +108,7 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 
 	var content strings.Builder
 	toolCalls := make(map[int]*ToolCall)
+	var currentReasoning strings.Builder
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -122,6 +133,12 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 				result.FinishReason = choice.FinishReason
 			}
 
+			// 输出推理内容
+			if choice.Delta.Reasoning != "" {
+				currentReasoning.WriteString(choice.Delta.Reasoning)
+				//fmt.Print("\033[38;5;243m" + choice.Delta.Reasoning + "\033[0m")
+			}
+
 			if choice.Delta.Content != "" {
 				content.WriteString(choice.Delta.Content)
 				send(msgs, choice.Delta.Content)
@@ -131,6 +148,11 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 				target, exists := toolCalls[tc.Index]
 				if !exists {
 					target = &ToolCall{}
+					// 将当前累积的推理内容关联到工具调用
+					if currentReasoning.Len() > 0 {
+						target.Reasoning = currentReasoning.String()
+						currentReasoning.Reset()
+					}
 					toolCalls[tc.Index] = target
 				}
 				if tc.ID != "" {
@@ -148,7 +170,7 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 	}
 
 	result.Content = content.String()
-	result.ToolCalls = extractToolGoals(orderedToolCalls(toolCalls))
+	result.ToolCalls = orderedToolCalls(toolCalls)
 	return result
 }
 
@@ -215,39 +237,6 @@ func orderedToolCalls(toolCalls map[int]*ToolCall) []ToolCall {
 		ordered = append(ordered, *toolCalls[index])
 	}
 	return ordered
-}
-
-// extractToolGoals extracts the "goal" field from each tool call's arguments
-// JSON, moving it into the Goal field and removing it from Arguments so it does
-// not interfere with command parsing.
-func extractToolGoals(calls []ToolCall) []ToolCall {
-	for i := range calls {
-		goal, cleaned := extractGoal(calls[i].Arguments)
-		calls[i].Goal = goal
-		calls[i].Arguments = cleaned
-	}
-	return calls
-}
-
-// extractGoal pulls a "goal" key out of a JSON arguments string, returning
-// the goal value and the remaining JSON with that key removed.
-func extractGoal(arguments string) (string, string) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(arguments), &fields); err != nil {
-		return "", arguments
-	}
-	var goal string
-	if raw, ok := fields["goal"]; ok {
-		if err := json.Unmarshal(raw, &goal); err != nil {
-			return "", arguments
-		}
-		delete(fields, "goal")
-	}
-	cleaned, err := json.Marshal(fields)
-	if err != nil {
-		return goal, arguments
-	}
-	return goal, string(cleaned)
 }
 
 // send forwards a chunk to msgs, ignoring a nil channel.

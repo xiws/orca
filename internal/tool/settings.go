@@ -1,4 +1,4 @@
-package agent
+package tool
 
 import (
 	"orca/pkg/utils"
@@ -8,6 +8,7 @@ import (
 type Settings struct {
 	DefaultProvider string `json:"defaultProvider"`
 	DefaultModel    string `json:"defaultModel"`
+	Debug           string `json:"debug"`
 }
 
 // settings is the process-wide configuration backing Get and Set.
@@ -17,6 +18,7 @@ var settings Settings = LoadSettings()
 const (
 	KeyDefaultProvider = "defaultProvider"
 	KeyDefaultModel    = "defaultModel"
+	KeyDebug           = "debug"
 	setting            = "setting.json"
 )
 
@@ -27,6 +29,8 @@ func Get(key string) string {
 		return settings.DefaultProvider
 	case KeyDefaultModel:
 		return settings.DefaultModel
+	case KeyDebug:
+		return settings.Debug
 	default:
 		return ""
 	}
