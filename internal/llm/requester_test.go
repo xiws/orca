@@ -44,7 +44,7 @@ func TestRequesterParsesOpenAIStream(t *testing.T) {
 	}))
 	defer server.Close()
 
-	requester := NewRequester(ModelInfo{
+	requester := NewOpenAIRequester(ModelInfo{
 		Provider: "fake",
 		API:      "openai-completions",
 		BaseURL:  server.URL,
@@ -100,7 +100,7 @@ func TestRequesterNilChannelDoesNotBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	requester := NewRequester(ModelInfo{API: "openai-completions", BaseURL: server.URL, ModelID: "fake-model"})
+	requester := NewOpenAIRequester(ModelInfo{API: "openai-completions", BaseURL: server.URL, ModelID: "fake-model"})
 	result := requester.Request([]ChatMessage{{Role: RoleUser, Content: "hi"}}, nil)
 	if result.Error != nil {
 		t.Fatalf("Request() error = %v", result.Error)
@@ -145,7 +145,7 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 			}))
 			defer server.Close()
 
-			requester := NewRequester(ModelInfo{
+			requester := NewOpenAIRequester(ModelInfo{
 				API:           "openai-completions",
 				BaseURL:       server.URL,
 				ModelID:       "fake-model",
@@ -217,7 +217,7 @@ data: [DONE]
 	}))
 	defer server.Close()
 
-	requester := NewRequester(ModelInfo{API: "openai-completions", BaseURL: server.URL, ModelID: "fake-model", SupportsTools: true})
+	requester := NewOpenAIRequester(ModelInfo{API: "openai-completions", BaseURL: server.URL, ModelID: "fake-model", SupportsTools: true})
 	result := requester.Request([]ChatMessage{{Role: RoleUser, Content: "read the readme and run the tests"}}, nil)
 	if result.Error != nil {
 		t.Fatalf("Request() error = %v", result.Error)
@@ -268,7 +268,7 @@ func TestRequesterWithDefaultModel(t *testing.T) {
 		}
 	}()
 
-	result := NewRequester(info).Request([]ChatMessage{
+	result := NewOpenAIRequester(info).Request([]ChatMessage{
 		{Role: RoleSystem, Content: "You are a concise assistant. Answer in one short sentence."},
 		{Role: RoleUser, Content: "Introduce what an orca is in one sentence."},
 	}, msgs)
@@ -313,7 +313,7 @@ func TestRequesterReadsReadmeWithToolCalling(t *testing.T) {
 		t.Skipf("model %s/%s declares no tool support in .orca/models.json", defaultProvider, defaultModel)
 	}
 
-	result := NewRequester(info).Request([]ChatMessage{
+	result := NewOpenAIRequester(info).Request([]ChatMessage{
 		{Role: RoleSystem, Content: "You are a coding agent. Use the read tool to inspect files; never invent their content."},
 		{Role: RoleUser, Content: "Read file /Users/zhongxiwang/workspace/golang/orca/README.md"},
 	}, nil)

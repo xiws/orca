@@ -19,7 +19,7 @@ const (
 	ToolWrite      = "write"
 	ToolEdit       = "edit"
 	ToolBash       = "bash"
-	ToolCreateTask = "createtask"
+	ToolCreateTask = "create_task"
 )
 
 // Tool is a single entry of the "tools" array sent with a chat completion
@@ -109,16 +109,14 @@ func WriteTool() Tool {
 }
 
 // EditTool describes the edit command: a list of fragments applied to a file in
-// order, each located either by an exactly-matching old_string or by a 1 based
-// line range.
+// order, each located either by a unified diff (hunkpatch applies it
+// contentually, tolerating model imprecision) or by a 1 based line range.
 func EditTool() Tool {
 	fragment := ObjectProperty("A single replacement to apply to the file", map[string]ToolSchema{
-		"old_string":  StringProperty("Exact text to find; must match uniquely unless replace_all is true"),
-		"new_string":  StringProperty("Replacement text for old_string"),
-		"replace_all": BooleanProperty("Replace every occurrence of old_string instead of requiring a unique match"),
-		"start":       IntegerProperty("First line of the range to replace, 1 based and inclusive; an alternative locator to old_string, or a check on where it matched"),
-		"end":         IntegerProperty("Last line of the range to replace, 1 based and inclusive; defaults to start"),
-		"content":     StringProperty("Replacement lines when the fragment is located by start/end instead of old_string"),
+		"diff":    StringProperty("Unified diff to apply; line numbers are ignored, matching is content-based and tolerates model imprecision via hunkpatch's fuzzy algorithm"),
+		"start":   IntegerProperty("First line of the range to replace, 1 based and inclusive; an alternative locator to diff"),
+		"end":     IntegerProperty("Last line of the range to replace, 1 based and inclusive; defaults to start"),
+		"content": StringProperty("Replacement lines when the fragment is located by start/end instead of diff"),
 	})
 	return NewTool(ToolEdit,
 		"Apply one or more replacements to an existing file. Fragments are applied in order and the file is only written when every one of them matches.",
@@ -141,14 +139,18 @@ func BashTool() Tool {
 		}, "content"))
 }
 
-// CreateTaskTool describes the createTask command: it decomposes a high-level
+// CreateTaskTool describes the create_task command: it decomposes a high-level
 // goal into sub-tasks, runs each sub-task independently, and aggregates the
 // results back into a summary.
 func CreateTaskTool() Tool {
+	subTask := ObjectProperty("A single sub-task to create and run", map[string]ToolSchema{
+		"title":       StringProperty("Short title of the sub-task"),
+		"description": StringProperty("What the sub-task must achieve, in enough detail to act on"),
+	}, "title", "description")
 	return NewTool(ToolCreateTask,
 		"Decompose a high-level goal into multiple sub-tasks, run each sub-task independently, and aggregate the results. Use this when the user's request is complex and can be broken into parallel work streams.",
 		ObjectProperty("", map[string]ToolSchema{
-			"task_target": StringProperty("The high-level goal or task and step description to decompose and execute"),
+			"task_target": ArrayProperty("Sub-tasks to create and run", subTask),
 		}, "task_target"))
 }
 

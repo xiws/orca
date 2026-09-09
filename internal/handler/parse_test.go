@@ -64,12 +64,12 @@ func TestParseAcceptsFlatAndNestedParameters(t *testing.T) {
 			},
 		},
 		{
-			name:     "edit by string",
-			raw:      `{ "command": "edit", "data":{ "filename":"a.md", "contents":[{"old_string":"foo","new_string":"bar","replace_all":true}] } }`,
+			name:     "edit by diff",
+			raw:      `{ "command": "edit", "data":{ "filename":"a.md", "contents":[{"diff":"@@\n- foo\n+ bar"}] } }`,
 			wantName: CommandEdit,
 			check: func(t *testing.T, cmd command.CommandOption) {
 				fragment := cmd.(*EditOption).Contents[0]
-				if fragment.OldString != "foo" || fragment.NewString != "bar" || !fragment.ReplaceAll {
+				if fragment.Diff != "@@\n- foo\n+ bar" {
 					t.Fatalf("fragment = %+v", fragment)
 				}
 			},
@@ -306,7 +306,7 @@ func TestToolPromptCoversEveryCommand(t *testing.T) {
 			t.Fatalf("tool prompt misses %q:\n%s", name, prompt)
 		}
 	}
-	if !strings.Contains(prompt, "old_string") || !strings.Contains(prompt, "replace_all") {
-		t.Fatalf("tool prompt should explain the edit locators:\n%s", prompt)
+	if !strings.Contains(prompt, "\"diff\"") && !strings.Contains(prompt, "diff is a unified") {
+		t.Fatalf("tool prompt should explain the diff locator:\n%s", prompt)
 	}
 }

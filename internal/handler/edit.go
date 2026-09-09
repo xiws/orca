@@ -1,13 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"orca/internal/event"
+	"orca/pkg/command"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
-	"orca/pkg/command"
+	"github.com/zbysir/hunkpatch"
 )
 
 // EditHandler serves the edit command.
@@ -25,9 +26,13 @@ func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandEdit), nil
 	}
 	var shell = t.getShell(opt)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	if t.Publisher != nil {
+		t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	}
 	summary, err := t.edit(opt)
-	t.Publisher.Publish(event.NewToolAfterEvent(shell, summary, opt.Id))
+	if t.Publisher != nil {
+		t.Publisher.Publish(event.NewToolAfterEvent(shell, summary, opt.Id))
+	}
 	return nil, ResultFor(opt, summary, err)
 }
 
@@ -73,16 +78,13 @@ func (t EditHandler) getShell(opt *EditOption) string {
 	args := []string{"edit", opt.Filename}
 
 	for _, fragment := range opt.Contents {
-		if fragment.OldString != "" {
-			args = append(args, "--old-string", fragment.OldString)
+		if fragment.Diff != "" {
+			oneLine := strings.ReplaceAll(fragment.Diff, "\n", "\\n")
+			args = append(args, "--diff", oneLine)
 		}
 
-		if fragment.NewString != "" {
-			args = append(args, "--new-string", fragment.NewString)
-		}
-
-		if fragment.ReplaceAll {
-			args = append(args, "--replace-all")
+		if fragment.Content != "" {
+			args = append(args, "--content", fragment.Content)
 		}
 
 		if fragment.Start != 0 {
@@ -91,10 +93,6 @@ func (t EditHandler) getShell(opt *EditOption) string {
 
 		if fragment.End != 0 {
 			args = append(args, "--end", strconv.Itoa(fragment.End))
-		}
-
-		if fragment.Content != "" {
-			args = append(args, "--content", fragment.Content)
 		}
 	}
 
@@ -106,8 +104,8 @@ func (t EditHandler) getShell(opt *EditOption) string {
 // to point failures at the right entry.
 func applyFragment(content string, index int, fragment EditFragment) (string, string, error) {
 	switch {
-	case fragment.OldString != "":
-		return applyStringFragment(content, index, fragment)
+	case fragment.Diff != "":
+		return applyDiffFragment(content, index, fragment)
 	case fragment.Start > 0:
 		return applyLineFragment(content, index, fragment)
 	default:
@@ -115,58 +113,34 @@ func applyFragment(content string, index int, fragment EditFragment) (string, st
 	}
 }
 
-// applyStringFragment replaces a uniquely matching old_string.
-func applyStringFragment(content string, index int, fragment EditFragment) (string, string, error) {
-	matches := strings.Count(content, fragment.OldString)
-	if matches == 0 {
-		return "", "", fmt.Errorf("fragment %d: old_string %s not found", index, quote(fragment.OldString))
-	}
-	if matches > 1 && !fragment.ReplaceAll {
-		return "", "", fmt.Errorf("fragment %d: old_string %s matches %d times, extend it or set replace_all", index, quote(fragment.OldString), matches)
-	}
-	if fragment.Start > 0 {
-		if err := verifyLineRange(content, fragment); err != nil {
-			return "", "", fmt.Errorf("fragment %d: %w", index, err)
-		}
-	}
-
-	times := 1
-	if fragment.ReplaceAll {
-		times = -1
-	}
-	updated := strings.Replace(content, fragment.OldString, fragment.NewString, times)
-	return updated, fmt.Sprintf("replaced %d occurrence(s) of %s", matches, quote(fragment.OldString)), nil
-}
-
-// verifyLineRange checks that the lines a caller expected are the lines where
-// old_string actually matched.
-func verifyLineRange(content string, fragment EditFragment) error {
-	start, end, err := matchLineRange(content, fragment.OldString)
+// applyDiffFragment applies a unified diff to content using hunkpatch's fuzzy
+// matching algorithm, which tolerates incorrect line numbers and approximate
+// surrounding context — exactly what language models produce.
+func applyDiffFragment(content string, index int, fragment EditFragment) (string, string, error) {
+	opts := hunkpatch.Options{IndentTolerant: true}
+	result, err := hunkpatch.ApplyWith(content, fragment.Diff, opts)
 	if err != nil {
-		return err
+		var partial *hunkpatch.PartialError
+		if errors.As(err, &partial) {
+			if partial.Applied == 0 {
+				return "", "", fmt.Errorf("fragment %d: diff did not match any content (%d hunks skipped)", index, partial.Total)
+			}
+			return "", "", fmt.Errorf("fragment %d: only applied %d/%d hunks", index, partial.Applied, partial.Total)
+		}
+		if errors.Is(err, hunkpatch.ErrNoHunks) {
+			return "", "", fmt.Errorf("fragment %d: no hunks found in diff", index)
+		}
+		return "", "", fmt.Errorf("fragment %d: %w", index, err)
 	}
-	if fragment.End <= 0 {
-		fragment.End = fragment.Start
+	if result.Applied == 0 {
+		// Every hunk left the text unchanged (e.g. old == new, or anchor-only).
+		return content, "no hunks applied (content unchanged)", nil
 	}
-	if start != fragment.Start || end != fragment.End {
-		return fmt.Errorf("old_string matches lines %d-%d, not %d-%d", start, end, fragment.Start, fragment.End)
-	}
-	return nil
-}
-
-// matchLineRange returns the 1 based inclusive line range covered by the first
-// occurrence of old in content.
-func matchLineRange(content, old string) (int, int, error) {
-	at := strings.Index(content, old)
-	if at < 0 {
-		return 0, 0, fmt.Errorf("old_string %s not found", quote(old))
-	}
-	start := 1 + strings.Count(content[:at], "\n")
-	return start, start + strings.Count(old, "\n"), nil
+	return result.Text, fmt.Sprintf("applied %d hunk(s)", result.Applied), nil
 }
 
 // applyLineFragment replaces the inclusive 1 based line range Start to End with
-// Content, which is only meant for callers that already know the line numbers.
+// Content.
 func applyLineFragment(content string, index int, fragment EditFragment) (string, string, error) {
 	lines := splitLines(content)
 	if fragment.Start > len(lines) {
@@ -208,13 +182,4 @@ func joinLines(lines []string, newline string, trailingNewline bool) string {
 		joined += newline
 	}
 	return joined
-}
-
-// quote makes a fragment readable inside an error message.
-func quote(s string) string {
-	oneLine := strings.ReplaceAll(s, "\n", `\n`)
-	if utf8.RuneCountInString(oneLine) > 40 {
-		oneLine = string([]rune(oneLine)[:40]) + "..."
-	}
-	return fmt.Sprintf("%q", oneLine)
 }

@@ -21,10 +21,10 @@ func (ReadOption) GetName() string { return CommandRead }
 // WriteOption is the "write" command parameter: it overwrites Filename with
 // Content, creating the file and its parent directories when missing.
 type WriteOption struct {
-	Id       int64
+	Id        int64
 	Reasoning string
-	Filename string
-	Content  string
+	Filename  string
+	Content   string
 }
 
 // GetId returns the invocation id that correlates the result with this call.
@@ -36,10 +36,10 @@ func (WriteOption) GetName() string { return CommandWrite }
 // EditOption is the "edit" command parameter: Contents are applied to Filename
 // in order, each fragment receiving the output of the previous one.
 type EditOption struct {
-	Id       int64
+	Id        int64
 	Reasoning string
-	Filename string
-	Contents []EditFragment
+	Filename  string
+	Contents  []EditFragment
 }
 
 // GetId returns the invocation id that correlates the result with this call.
@@ -48,27 +48,26 @@ func (t EditOption) GetId() int64 { return t.Id }
 // GetName returns the routing name of the command.
 func (EditOption) GetName() string { return CommandEdit }
 
-// EditFragment is a single replacement inside an edit command. OldString is the
-// preferred locator; Start and End describe a 1 based line range and are either
-// used as the locator, when OldString is empty, or as a verification of where
-// OldString matched.
+// EditFragment is a single replacement inside an edit command. Diff is the
+// preferred locator: a unified diff that hunkpatch applies contentually, so
+// line numbers and exact surrounding context are not required. Start and End
+// describe a 1 based line range and are the alternative locator when Diff is
+// empty.
 type EditFragment struct {
-	OldString  string `json:"old_string"`
-	NewString  string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all,omitempty"`
-	Start      int    `json:"start,omitempty"`
-	End        int    `json:"end,omitempty"`
-	Content    string `json:"content,omitempty"`
+	Diff    string `json:"diff,omitempty"`
+	Start   int    `json:"start,omitempty"`
+	End     int    `json:"end,omitempty"`
+	Content string `json:"content,omitempty"`
 }
 
 // BashOption is the "bash" command parameter: it runs Content in Workdir. A zero
 // Timeout means DefaultBashTimeout seconds.
 type BashOption struct {
-	Id      int64
+	Id        int64
 	Reasoning string
-	Content string
-	Workdir string
-	Timeout int
+	Content   string
+	Workdir   string
+	Timeout   int
 }
 
 // GetId returns the invocation id that correlates the result with this call.

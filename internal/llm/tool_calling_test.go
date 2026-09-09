@@ -32,11 +32,11 @@ func TestToolsMarshalToOpenAIShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		t.Fatalf("Unmarshal() error = %v, payload: %s", err, raw)
 	}
-	if len(envelope.Tools) != 4 {
-		t.Fatalf("len(Tools) = %d, want 4", len(envelope.Tools))
+	if len(envelope.Tools) != 5 {
+		t.Fatalf("len(Tools) = %d, want 5", len(envelope.Tools))
 	}
 
-	wantNames := []string{ToolRead, ToolWrite, ToolEdit, ToolBash}
+	wantNames := []string{ToolRead, ToolWrite, ToolEdit, ToolBash, ToolCreateTask}
 	for i, tool := range envelope.Tools {
 		if tool.Type != "function" {
 			t.Errorf("tool %d type = %q, want %q", i, tool.Type, "function")
@@ -60,10 +60,11 @@ func TestToolsMarshalToOpenAIShape(t *testing.T) {
 // avoid making llm depend on it.
 func TestToolParametersMatchHandlerProtocol(t *testing.T) {
 	want := map[string][]string{
-		ToolRead:  {"filename", "start", "end"},
-		ToolWrite: {"filename", "content"},
-		ToolEdit:  {"filename", "contents"},
-		ToolBash:  {"content", "workdir", "timeout"},
+		ToolRead:       {"filename", "start", "end"},
+		ToolWrite:      {"filename", "content"},
+		ToolEdit:       {"filename", "contents"},
+		ToolBash:       {"content", "workdir", "timeout"},
+		ToolCreateTask: {"task_target"},
 	}
 	for _, tool := range Tools() {
 		properties, err := json.Marshal(tool.Function.Parameters.Properties)
@@ -85,12 +86,31 @@ func TestEditToolDescribesFragmentProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	for _, locator := range []string{"old_string", "new_string", "replace_all", "start", "end", "content"} {
+	for _, locator := range []string{"diff", "start", "end", "content"} {
 		if !strings.Contains(string(raw), `"`+locator+`"`) {
 			t.Errorf("edit tool should describe %q, got %s", locator, raw)
 		}
 	}
 	if !strings.Contains(string(raw), `"type":"array"`) {
 		t.Errorf("edit tool contents should be an array, got %s", raw)
+	}
+}
+
+// TestCreateTaskToolDescribesTaskTargetProperties pins the nested shape of
+// task_target: an array of {title, description} objects, matching the json
+// tags of handler.TaskBaseInfo. A drift here makes the model send a string
+// the runtime cannot decode, failing every create_task call.
+func TestCreateTaskToolDescribesTaskTargetProperties(t *testing.T) {
+	raw, err := json.Marshal(CreateTaskTool())
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(raw), `"type":"array"`) {
+		t.Errorf("create_task task_target should be an array, got %s", raw)
+	}
+	for _, field := range []string{"title", "description"} {
+		if !strings.Contains(string(raw), `"`+field+`"`) {
+			t.Errorf("create_task should describe sub-task field %q, got %s", field, raw)
+		}
 	}
 }

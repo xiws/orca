@@ -35,9 +35,9 @@ var (
 	// ErrOutsideWorkspace is returned when a path resolves outside the allowed
 	// root directory.
 	ErrOutsideWorkspace = errors.New("path is outside the workspace")
-	// ErrFragmentLocator is returned when an edit fragment offers neither an
-	// old_string nor a start line.
-	ErrFragmentLocator = errors.New("fragment needs old_string or start line")
+	// ErrFragmentLocator is returned when an edit fragment offers neither a
+	// diff nor a start line.
+	ErrFragmentLocator = errors.New("fragment needs diff or start line")
 )
 
 // CommandResult is the uniform result of a command execution. It is the value
@@ -87,8 +87,8 @@ func ResultFor(cmd command.CommandOption, content string, err error) CommandResu
 	return NewResult(id, cmd.GetName(), content, err)
 }
 
-// Register adds handlers for all four tool commands to handle, scoping file
-// access to ws.
+// Register adds handlers for every built-in tool command to handle, scoping
+// file access to ws.
 func Register(handle *command.CommandHandle, ws Workspace) error {
 	entries := []struct {
 		option  command.CommandOption
@@ -98,6 +98,7 @@ func Register(handle *command.CommandHandle, ws Workspace) error {
 		{&WriteOption{}, WriteHandler{Workspace: ws}},
 		{&EditOption{}, EditHandler{Workspace: ws}},
 		{&BashOption{}, BashHandler{Workspace: ws}},
+		{&CreateTaskOption{}, &CreateTaskHandler{}},
 	}
 
 	for _, entry := range entries {

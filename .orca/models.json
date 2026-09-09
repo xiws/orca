@@ -3,7 +3,7 @@
     "ollama": {
       "name": "Ollama (Local)",
       "api": "openai-completions",
-      "baseUrl": "http://192.168.5.10:11434/v1",
+      "baseUrl": "http://localhost:11434/v1",
       "apiKey": "ollama",
       "models": [
         {

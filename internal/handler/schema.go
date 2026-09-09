@@ -31,15 +31,22 @@ const ToolSchema = `
     Rebuilds the file from scratch, creating missing parent directories. Everything not in content is lost.
 
 { "command": "edit",  "id": 3, "data": { "filename": "/abs/or/relative/path", "contents": [
-    { "old_string": "text to find", "new_string": "replacement", "replace_all": false },
+    { "diff": "@@\n- old line\n+ new line" },
     { "start": 100, "end": 101, "content": "replacement lines" }
 ] } }
     Applies the fragments in order and only writes the file if all of them match.
-    old_string must match exactly once unless replace_all is true; start and end are an
-    alternative 1 based line locator and are only checked against old_string when both are given.
+    diff is a unified diff applied by hunkpatch — line numbers are ignored,
+    matching is content-based and tolerant of model imprecision. start and end
+    are an alternative 1 based line locator for when exact lines are known.
 
 { "command": "bash",  "id": 4, "data": { "content": "ls -a", "workdir": "relative/or/absolute/dir", "timeout": 60 } }
     Runs the command line in a shell and returns stdout and stderr merged. timeout is in seconds.
+
+{ "command": "create_task", "id": 5, "data": { "task_target": [
+    { "title": "short sub-task title", "description": "what the sub-task must achieve" }
+] } }
+    Decomposes the goal into sub-tasks and runs them; task_target is an array of
+    sub-tasks, each carrying a title and a description.
 `
 
 func quoteAll(values []string) []string {

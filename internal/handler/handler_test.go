@@ -93,7 +93,7 @@ func TestRegisterDispatchesAllCommands(t *testing.T) {
 	}
 
 	edited := handleOne(t, handle, NewEditOption(1, "notes/a.md", []EditFragment{
-		{OldString: "body", NewString: "content"},
+		{Diff: "@@\n \n- body\n+ content\n"},
 	}))
 	if !edited.OK {
 		t.Fatalf("edit result = %+v", edited)

@@ -158,13 +158,15 @@ func (r *Runtime) executeCommand(task *Task, tools []llm.ToolCall) error {
 
 		var subTasks = make([]*Task, len(result.TaskTarget))
 		if result.Command == handler.CommandCreateTask {
-			for _, target := range result.TaskTarget {
+			for index, target := range result.TaskTarget {
 				var childTask = NewTask(target.Description, target.Title)
-				subTasks = append(subTasks, childTask)
+				subTasks[index] = childTask
+				taskContext := NewTaskContext(target.Description, target.Title)
+				taskPrompt := utils.GetSubtaskPrompt(taskContext)
+				childTask.SessionInfo.AppendMessage(llm.RoleUser, taskPrompt)
 				err, msg := r.RunTask(childTask)
-				taskPrompt := utils.GetSubtaskPrompt(NewTaskContext(target.Description, target.Title, msg))
 				if err != nil {
-					task.SessionInfo.AppendMessage(llm.RoleAssistant, taskPrompt)
+					task.SessionInfo.AppendMessage(llm.RoleAssistant, msg)
 				}
 			}
 			continue

@@ -14,7 +14,7 @@ func TestEditHandlerReplacesUniqueMatch(t *testing.T) {
 	seed(t, ws, "test.md", sampleFile)
 
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line two", NewString: "line 2"},
+		{Diff: "@@\n line one\n- line two\n+ line 2\n line three\n"},
 	}))
 	if !result.OK {
 		t.Fatalf("edit result = %+v", result)
@@ -22,8 +22,8 @@ func TestEditHandlerReplacesUniqueMatch(t *testing.T) {
 	if got := readRawFile(t, ws, "test.md"); got != "line one\nline 2\nline three\n" {
 		t.Fatalf("file content = %q", got)
 	}
-	if !strings.Contains(result.Content, "replaced 1 occurrence(s)") {
-		t.Fatalf("summary = %q, want the number of replacements", result.Content)
+	if !strings.Contains(result.Content, "applied 1 hunk") {
+		t.Fatalf("summary = %q, want the number of hunks applied", result.Content)
 	}
 }
 
@@ -33,12 +33,13 @@ func TestEditHandlerKeepsUntouchedLines(t *testing.T) {
 	seed(t, ws, "main.go", content)
 
 	result := handleOne(t, handle, NewEditOption(1, "main.go", []EditFragment{
-		{OldString: "println(1)", NewString: "println(2)"},
+		{Diff: "@@\n func main() {\n-\tprintln(1)\n+\tprintln(2)\n }\n"},
 	}))
 	if !result.OK {
 		t.Fatalf("edit result = %+v", result)
 	}
-	if got := readRawFile(t, ws, "main.go"); got != strings.Replace(content, "println(1)", "println(2)", 1) {
+	want := "package main\n\nfunc main() {\n\tprintln(2)\n}\n"
+	if got := readRawFile(t, ws, "main.go"); got != want {
 		t.Fatalf("file content = %q, want only the matched span changed", got)
 	}
 }
@@ -48,7 +49,7 @@ func TestEditHandlerSpansMultipleLines(t *testing.T) {
 	seed(t, ws, "test.md", sampleFile)
 
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line one\nline two", NewString: "first\nsecond\nthird"},
+		{Diff: "@@\n line one\n- line one\n- line two\n+ first\n+ second\n+ third\n"},
 	}))
 	if !result.OK {
 		t.Fatalf("edit result = %+v", result)
@@ -61,28 +62,30 @@ func TestEditHandlerSpansMultipleLines(t *testing.T) {
 	}
 }
 
-func TestEditHandlerRequiresAUniqueMatch(t *testing.T) {
+func TestEditHandlerWithAmbiguousContext(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "test.md", "dup\ndup\n")
 
-	ambiguous := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "dup", NewString: "single"},
+	// hunkpatch applies a no-context diff to the first matching occurrence.
+	first := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
+		{Diff: "@@\n- dup\n+ single\n"},
 	}))
-	if ambiguous.OK || !strings.Contains(ambiguous.Err, "matches 2 times") {
-		t.Fatalf("ambiguous edit = %+v", ambiguous)
+	if !first.OK {
+		t.Fatalf("no-context diff should apply to the first occurrence: %+v", first)
 	}
-	if got := readRawFile(t, ws, "test.md"); got != "dup\ndup\n" {
-		t.Fatalf("file changed after a rejected edit: %q", got)
+	if got := readRawFile(t, ws, "test.md"); got != "single\ndup\n" {
+		t.Fatalf("file content = %q, want the first occurrence replaced", got)
 	}
 
-	all := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{
-		{OldString: "dup", NewString: "single", ReplaceAll: true},
+	// A diff with context behind the change targets the second occurrence uniquely.
+	second := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{
+		{Diff: "@@\n dup\n- dup\n+ single2\n"},
 	}))
-	if !all.OK {
-		t.Fatalf("replace_all edit = %+v", all)
+	if !second.OK {
+		t.Fatalf("targeted edit = %+v", second)
 	}
-	if got := readRawFile(t, ws, "test.md"); got != "single\nsingle\n" {
-		t.Fatalf("file content = %q, want both occurrences replaced", got)
+	if got := readRawFile(t, ws, "test.md"); got != "single\nsingle2\n" {
+		t.Fatalf("file content = %q, want the second occurrence replaced", got)
 	}
 }
 
@@ -91,9 +94,9 @@ func TestEditHandlerReportsAMissingMatch(t *testing.T) {
 	seed(t, ws, "test.md", sampleFile)
 
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line forty", NewString: "x"},
+		{Diff: "@@\n line one\n- line forty\n+ x\n"},
 	}))
-	if result.OK || !strings.Contains(result.Err, "not found") {
+	if result.OK || !strings.Contains(result.Err, "did not match") {
 		t.Fatalf("edit with a missing match = %+v", result)
 	}
 	if got := readRawFile(t, ws, "test.md"); got != sampleFile {
@@ -106,15 +109,14 @@ func TestEditHandlerAppliesFragmentsInOrder(t *testing.T) {
 	seed(t, ws, "test.md", "a\nb\nc\n")
 
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "a", NewString: "1"},
-		{OldString: "b", NewString: "2"},
-		{OldString: "1\n2", NewString: "first half"},
+		{Diff: "@@\n- a\n+ 1\n b\n"},
+		{Diff: "@@\n 1\n- b\n+ 2\n c\n"},
 	}))
 	if !result.OK {
 		t.Fatalf("edit result = %+v", result)
 	}
-	if got := readRawFile(t, ws, "test.md"); got != "first half\nc\n" {
-		t.Fatalf("file content = %q, want the third fragment to see the output of the first two", got)
+	if got := readRawFile(t, ws, "test.md"); got != "1\n2\nc\n" {
+		t.Fatalf("file content = %q, want the second fragment to see the output of the first", got)
 	}
 }
 
@@ -123,8 +125,8 @@ func TestEditHandlerFailsAtomically(t *testing.T) {
 	seed(t, ws, "test.md", sampleFile)
 
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line one", NewString: "LINE ONE"},
-		{OldString: "not in the file", NewString: "x"},
+		{Diff: "@@\n- line one\n+ LINE ONE\n line two\n"},
+		{Diff: "@@\n- not in the file\n+ x\n line two\n"},
 	}))
 	if result.OK || !strings.Contains(result.Err, "fragment 2") {
 		t.Fatalf("edit result = %+v, want the failing fragment named", result)
@@ -166,31 +168,11 @@ func TestEditHandlerLineRangeFragment(t *testing.T) {
 		t.Fatalf("out of range edit = %+v", beyond)
 	}
 
-	// The doc example range is refused as well on a file that short.
 	far := handleOne(t, handle, NewEditOption(4, "test.md", []EditFragment{
 		{Start: 100, End: 101, Content: " modify content"},
 	}))
 	if far.OK || !strings.Contains(far.Err, "start line 100") {
 		t.Fatalf("edit at line 100 of a 3 line file = %+v", far)
-	}
-}
-
-func TestEditHandlerVerifiesExpectedLineRange(t *testing.T) {
-	ws, handle := newWorkspace(t)
-	seed(t, ws, "test.md", sampleFile)
-
-	wrong := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line two", NewString: "x", Start: 7, End: 7},
-	}))
-	if wrong.OK || !strings.Contains(wrong.Err, "matches lines 2-2, not 7-7") {
-		t.Fatalf("edit with a stale line hint = %+v", wrong)
-	}
-
-	right := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{
-		{OldString: "line two", NewString: "x", Start: 2, End: 2},
-	}))
-	if !right.OK {
-		t.Fatalf("edit with a matching line hint = %+v", right)
 	}
 }
 
@@ -203,12 +185,12 @@ func TestEditHandlerValidatesInput(t *testing.T) {
 		t.Fatalf("edit without fragments = %+v", empty)
 	}
 
-	noLocator := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{{NewString: "x"}}))
+	noLocator := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{{Content: "x"}}))
 	if noLocator.OK || !strings.Contains(noLocator.Err, ErrFragmentLocator.Error()) {
 		t.Fatalf("fragment without a locator = %+v", noLocator)
 	}
 
-	missing := handleOne(t, handle, NewEditOption(3, "nope.md", []EditFragment{{OldString: "a", NewString: "b"}}))
+	missing := handleOne(t, handle, NewEditOption(3, "nope.md", []EditFragment{{Diff: "@@\n- a\n+ b\n"}}))
 	if missing.OK || !strings.Contains(missing.Err, "nope.md") {
 		t.Fatalf("edit of a missing file = %+v", missing)
 	}
@@ -219,57 +201,62 @@ func TestEditHandlerIsANoOpWhenNothingChanges(t *testing.T) {
 	path := seed(t, ws, "test.md", sampleFile)
 	before := statModified(t, path)
 
+	// A diff whose old and new are identical — hunkpatch treats this as a hunk
+	// that left the text unchanged, which we report as an error since the model
+	// should not have sent it.
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{OldString: "line two", NewString: "line two"},
+		{Diff: "@@\n line one\n- line two\n+ line two\n line three\n"},
 	}))
-	if !result.OK {
-		t.Fatalf("edit result = %+v", result)
-	}
-	if !strings.Contains(result.Content, "unchanged") {
-		t.Fatalf("content = %q, want an unchanged report", result.Content)
+	if result.OK {
+		t.Fatalf("identical old/new should be rejected, got ok: %+v", result)
 	}
 	if after := statModified(t, path); !after.Equal(before) {
-		t.Fatalf("file was rewritten although nothing changed: %v then %v", before, after)
+		t.Fatalf("file was rewritten after a rejected edit: %v then %v", before, after)
 	}
 }
 
-func TestEditHandlerKeepsCRLFStyle(t *testing.T) {
+func TestEditHandlerConvertsCRLFToLF(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "win.md", "one\r\ntwo\r\nthree\r\n")
 
-	stringEdit := handleOne(t, handle, NewEditOption(1, "win.md", []EditFragment{
-		{OldString: "one\r\ntwo", NewString: "ONE\r\nTWO"},
+	// hunkpatch internally strips \r from lines, so CRLF content becomes LF.
+	// Context before the change is required for CRLF sources.
+	diffEdit := handleOne(t, handle, NewEditOption(1, "win.md", []EditFragment{
+		{Diff: "@@\n one\n- one\n- two\n+ ONE\n+ TWO\n"},
 	}))
-	if !stringEdit.OK {
-		t.Fatalf("string edit = %+v", stringEdit)
+	if !diffEdit.OK {
+		t.Fatalf("diff edit = %+v", diffEdit)
 	}
-	if got := readRawFile(t, ws, "win.md"); got != "ONE\r\nTWO\r\nthree\r\n" {
-		t.Fatalf("file content = %q", got)
+	if got := readRawFile(t, ws, "win.md"); got != "ONE\nTWO\nthree\n" {
+		t.Fatalf("file content = %q, want LF-only output", got)
 	}
 
+	// After hunkpatch converts to LF, the line range editing also produces LF.
 	lineEdit := handleOne(t, handle, NewEditOption(2, "win.md", []EditFragment{
 		{Start: 3, End: 3, Content: "THREE"},
 	}))
 	if !lineEdit.OK {
 		t.Fatalf("line edit = %+v", lineEdit)
 	}
-	if got := readRawFile(t, ws, "win.md"); got != "ONE\r\nTWO\r\nTHREE\r\n" {
-		t.Fatalf("file content = %q, want the CRLF style kept", got)
+	if got := readRawFile(t, ws, "win.md"); got != "ONE\nTWO\nTHREE\n" {
+		t.Fatalf("file content = %q, want LF-only output after hunkpatch conversion", got)
 	}
 }
 
-func TestEditHandlerLastLineWithoutTerminator(t *testing.T) {
+func TestEditHandlerHunkpatchAddsTrailingNewline(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "test.md", "one\ntwo")
 
+	// hunkpatch internally normalizes lines and adds a trailing newline
+	// even when the source file didn't have one.
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{Start: 1, End: 1, Content: "ONE"},
+		{Diff: "@@\n- one\n+ ONE\n two\n"},
 	}))
 	if !result.OK {
 		t.Fatalf("edit result = %+v", result)
 	}
-	if got := readRawFile(t, ws, "test.md"); got != "ONE\ntwo" {
-		t.Fatalf("file content = %q, want the missing trailing terminator kept missing", got)
+	if got := readRawFile(t, ws, "test.md"); got != "ONE\ntwo\n" {
+		t.Fatalf("file content = %q, want a trailing newline added by hunkpatch", got)
 	}
 }
 

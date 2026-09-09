@@ -29,11 +29,11 @@ type TaskContext struct {
 	Result      string `json:"result"`
 }
 
-func NewTaskContext(desc, title, result string) TaskContext {
+func NewTaskContext(desc, title string) TaskContext {
 	return TaskContext{
 		Title:       title,
 		Description: desc,
-		Result:      result,
+		Result:      "",
 	}
 }
 
