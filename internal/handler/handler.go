@@ -35,9 +35,8 @@ var (
 	// ErrOutsideWorkspace is returned when a path resolves outside the allowed
 	// root directory.
 	ErrOutsideWorkspace = errors.New("path is outside the workspace")
-	// ErrFragmentLocator is returned when an edit fragment offers neither a
-	// diff nor a start line.
-	ErrFragmentLocator = errors.New("fragment needs diff or start line")
+	// ErrFragmentLocator is returned when an edit fragment carries no diff.
+	ErrFragmentLocator = errors.New("fragment needs a diff")
 )
 
 // CommandResult is the uniform result of a command execution. It is the value

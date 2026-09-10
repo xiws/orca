@@ -127,7 +127,7 @@ func TestRunTaskSurfacesModelFailure(t *testing.T) {
 }
 
 func TestRunTask(t *testing.T) {
-	var prompt = "编辑README.md文件，在后面追加目前tool_calling的各个方法和功能描述信息"
+	var prompt = "编辑README.md文件，在后面追加目前tool_calling.go中做了些什么"
 	var task = NewTask(prompt, "")
 	var project_path = utils.GetEnv("PROJECT_PATH")
 	data := PromptContext{

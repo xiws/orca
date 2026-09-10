@@ -32,12 +32,11 @@ const ToolSchema = `
 
 { "command": "edit",  "id": 3, "data": { "filename": "/abs/or/relative/path", "contents": [
     { "diff": "@@\n- old line\n+ new line" },
-    { "start": 100, "end": 101, "content": "replacement lines" }
+    { "diff": "@@\n- another old line\n+ another new line" }
 ] } }
     Applies the fragments in order and only writes the file if all of them match.
     diff is a unified diff applied by hunkpatch — line numbers are ignored,
-    matching is content-based and tolerant of model imprecision. start and end
-    are an alternative 1 based line locator for when exact lines are known.
+    matching is content-based and tolerant of model imprecision.
 
 { "command": "bash",  "id": 4, "data": { "content": "ls -a", "workdir": "relative/or/absolute/dir", "timeout": 60 } }
     Runs the command line in a shell and returns stdout and stderr merged. timeout is in seconds.

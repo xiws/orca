@@ -80,19 +80,31 @@ func TestToolParametersMatchHandlerProtocol(t *testing.T) {
 }
 
 // TestEditToolDescribesFragmentProperties checks the one nested schema among
-// the four tools keeps the locators the edit handler understands.
+// the four tools keeps the single locator the edit handler understands: a
+// unified diff, matched by content. start/end/content used to be a second
+// locator and must not resurface, or the model will send fragments the
+// runtime rejects.
 func TestEditToolDescribesFragmentProperties(t *testing.T) {
 	raw, err := json.Marshal(EditTool())
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	for _, locator := range []string{"diff", "start", "end", "content"} {
-		if !strings.Contains(string(raw), `"`+locator+`"`) {
-			t.Errorf("edit tool should describe %q, got %s", locator, raw)
-		}
-	}
 	if !strings.Contains(string(raw), `"type":"array"`) {
 		t.Errorf("edit tool contents should be an array, got %s", raw)
+	}
+
+	contents, ok := EditTool().Function.Parameters.Properties["contents"]
+	if !ok || contents.Items == nil {
+		t.Fatalf("edit tool contents should be an array with an item schema, got %s", raw)
+	}
+	properties := contents.Items.Properties
+	if _, ok := properties["diff"]; !ok {
+		t.Errorf("edit fragment should describe %q, got %s", "diff", raw)
+	}
+	for _, dropped := range []string{"start", "end", "content"} {
+		if _, ok := properties[dropped]; ok {
+			t.Errorf("edit fragment should no longer describe %q, got %s", dropped, raw)
+		}
 	}
 }
 

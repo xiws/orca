@@ -48,16 +48,11 @@ func (t EditOption) GetId() int64 { return t.Id }
 // GetName returns the routing name of the command.
 func (EditOption) GetName() string { return CommandEdit }
 
-// EditFragment is a single replacement inside an edit command. Diff is the
-// preferred locator: a unified diff that hunkpatch applies contentually, so
-// line numbers and exact surrounding context are not required. Start and End
-// describe a 1 based line range and are the alternative locator when Diff is
-// empty.
+// EditFragment is a single replacement inside an edit command. Diff is a
+// unified diff that hunkpatch applies contentually, so line numbers and exact
+// surrounding context are not required.
 type EditFragment struct {
-	Diff    string `json:"diff,omitempty"`
-	Start   int    `json:"start,omitempty"`
-	End     int    `json:"end,omitempty"`
-	Content string `json:"content,omitempty"`
+	Diff string `json:"diff,omitempty"`
 }
 
 // BashOption is the "bash" command parameter: it runs Content in Workdir. A zero

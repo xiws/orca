@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"orca/internal/event"
 	"orca/pkg/command"
-	"strconv"
 	"strings"
 
 	"github.com/zbysir/hunkpatch"
@@ -82,18 +81,6 @@ func (t EditHandler) getShell(opt *EditOption) string {
 			oneLine := strings.ReplaceAll(fragment.Diff, "\n", "\\n")
 			args = append(args, "--diff", oneLine)
 		}
-
-		if fragment.Content != "" {
-			args = append(args, "--content", fragment.Content)
-		}
-
-		if fragment.Start != 0 {
-			args = append(args, "--start", strconv.Itoa(fragment.Start))
-		}
-
-		if fragment.End != 0 {
-			args = append(args, "--end", strconv.Itoa(fragment.End))
-		}
 	}
 
 	return strings.Join(args, " ")
@@ -103,14 +90,10 @@ func (t EditHandler) getShell(opt *EditOption) string {
 // plus a one line summary. index is the 1 based position of the fragment, used
 // to point failures at the right entry.
 func applyFragment(content string, index int, fragment EditFragment) (string, string, error) {
-	switch {
-	case fragment.Diff != "":
-		return applyDiffFragment(content, index, fragment)
-	case fragment.Start > 0:
-		return applyLineFragment(content, index, fragment)
-	default:
+	if fragment.Diff == "" {
 		return "", "", fmt.Errorf("%w: fragment %d", ErrFragmentLocator, index)
 	}
+	return applyDiffFragment(content, index, fragment)
 }
 
 // applyDiffFragment applies a unified diff to content using hunkpatch's fuzzy
@@ -137,49 +120,4 @@ func applyDiffFragment(content string, index int, fragment EditFragment) (string
 		return content, "no hunks applied (content unchanged)", nil
 	}
 	return result.Text, fmt.Sprintf("applied %d hunk(s)", result.Applied), nil
-}
-
-// applyLineFragment replaces the inclusive 1 based line range Start to End with
-// Content.
-func applyLineFragment(content string, index int, fragment EditFragment) (string, string, error) {
-	lines := splitLines(content)
-	if fragment.Start > len(lines) {
-		return "", "", fmt.Errorf("fragment %d: start line %d is beyond the end of the file (%d lines)", index, fragment.Start, len(lines))
-	}
-	end := fragment.End
-	if end <= 0 {
-		end = fragment.Start
-	}
-	if end > len(lines) {
-		return "", "", fmt.Errorf("fragment %d: end line %d is beyond the end of the file (%d lines)", index, end, len(lines))
-	}
-
-	updated := make([]string, 0, len(lines))
-	updated = append(updated, lines[:fragment.Start-1]...)
-	updated = append(updated, splitLines(fragment.Content)...)
-	updated = append(updated, lines[end:]...)
-	return joinLines(updated, detectNewline(content), strings.HasSuffix(content, "\n")),
-		fmt.Sprintf("replaced lines %d-%d with %d line(s)", fragment.Start, end, len(splitLines(fragment.Content))), nil
-}
-
-// detectNewline returns the line terminator used by content, so an edit never
-// rewrites the line ending style of an existing file.
-func detectNewline(content string) string {
-	if strings.Contains(content, "\r\n") {
-		return "\r\n"
-	}
-	return "\n"
-}
-
-// joinLines glues lines back together, keeping the trailing terminator only
-// when the original content had one.
-func joinLines(lines []string, newline string, trailingNewline bool) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	joined := strings.Join(lines, newline)
-	if trailingNewline {
-		joined += newline
-	}
-	return joined
 }

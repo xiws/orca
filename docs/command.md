@@ -27,7 +27,7 @@ write 与 edit 的区别：如果让 write 去修改一个已有文件，它会�
 { "command": "write", "id": 2, "data": { "filename": "/home/xiw/test.md", "content": "hello orca" } }
 
 { "command": "edit",  "id": 3, "data": { "filename": "/home/xiw/test.md",
-                                "contents": [{ "old_string": "foo", "new_string": "bar", "replace_all": false }] } }
+                                "contents": [{ "diff": "@@\n- foo\n+ bar" }] } }
 
 { "command": "bash",  "id": 4, "data": { "content": "ls -a", "workdir": "/home/xiw", "timeout": 60 } }
 ```
@@ -36,12 +36,9 @@ write 与 edit 的区别：如果让 write 去修改一个已有文件，它会�
 
 ### edit 的定位方式
 
-`contents` 是一组按顺序应用的替换片段，每个片段支持两种定位方式：
+`contents` 是一组按顺序应用的替换片段，每个片段只接受一种定位方式：`diff`，一段 unified diff，由 [hunkpatch](command_edit.md) 按**内容**匹配后应用。行号不参与定位，因此模型写错行号、上下文抄得大致对都能落地；无法匹配的片段会让整条命令失败。
 
-1. `old_string` / `new_string`（**推荐、默认**）：在文件中精确匹配 `old_string` 并替换为 `new_string`。要求在当前文件内唯一命中，命中 0 次或多次且未设置 `replace_all` 时返回错误，不做任何修改。
-2. `start` / `end`（可选、行号区间）：按 1-based 闭区间替换行，`content` 为该区间的新内容；仅用于调用方已明确掌握行号的场景。
-
-同一个片段两者同时出现时，以 `old_string` 为准，`start` / `end` 只用于结果校验（行号对不上则报错）。多个片段按数组顺序串行应用，前一个的结果作为后一个的输入；任一片段失败则整条 edit 命令失败且不落盘（先在内存中算完整内容，再一次性写入）。
+多个片段按数组顺序串行应用，前一个的结果作为后一个的输入；任一片段失败则整条 edit 命令失败且不落盘（先在内存中算完整内容，再一次性写入）。
 
 ## 返回值
 
@@ -67,7 +64,7 @@ type CommandResult struct {
 | --- | --- | --- |
 | read | 带行号的文件内容，如 `12\tfoo` | 文件不存在、无权限、超出允许目录 |
 | write | `wrote 1024 bytes to /home/xiw/test.md` | 创建目录失败、只读路径 |
-| edit | 每个片段的替换摘要 + 变更行数 | `old_string` 未命中 / 命中多次、区间越界 |
+| edit | 每个片段的替换摘要 + 变更行数 | diff 未命中任何内容、只有部分 hunk 命中、片段没有 diff |
 | bash | stdout 与 stderr 合并输出 | 命令不存在、退出码非 0、超时 |
 
 ## Go 结构定义
@@ -109,12 +106,7 @@ type EditOption struct {
 }
 
 type EditFragment struct {
-    OldString  string `json:"old_string"`
-    NewString  string `json:"new_string"`
-    ReplaceAll bool   `json:"replace_all,omitempty"`
-    Start      int    `json:"start,omitempty"` // 可选，行号定位
-    End        int    `json:"end,omitempty"`
-    Content    string `json:"content,omitempty"`
+    Diff string `json:"diff,omitempty"` // unified diff，按内容匹配
 }
 
 type BashOption struct {
@@ -153,7 +145,7 @@ read / write / edit / bash 之间不并发执行：同文件的读改写必须�
 
 - 文件路径：绝对路径原样使用，相对路径基于 `Workspace.Root`（缺省为进程工作目录）解析；write / edit 写入前自动创建父目录。
 - 白名单：四类命令（包括 read 与 bash 的 workdir）都只能碰 workspace 内的路径；比较前把路径与根目录都解引用到真实位置，因此 `..` 和指向外部的符号链接都拦得住。
-- 编码与换行：按 UTF-8 处理，不在 read / edit 中做 `\r\n` 转换；行号区间的 edit 会沿用文件原有的换行风格，read 的输出则去掉行尾 `\r`。
+- 编码与换行：按 UTF-8 处理，read 的输出去掉行尾 `\r`；edit 交给 hunkpatch，它按 LF 处理并在必要时把内容规范成 LF。
 - read 分页：单次最多 `MaxReadLines`（2000）行，每行前缀 `N\t`；截断时在末尾给出续读的 `start` / `end`。
 - 原子写：write 与 edit 都先写同目录的临时文件再 rename，不产生半截文件；已存在的文件保留原权限位，失败时不留临时文件。
 - edit 不落盘的情况：任一片段定位失败则整条命令失败，文件保持原状；算下来内容与原文件相同时不写。

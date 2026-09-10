@@ -101,7 +101,7 @@ orca -f ./docs/test.md -f ./README.md "这是 agent 信息说明"
 | --- | --- | --- |
 | `read` | 只读 | 按行返回文件内容，不改动文件 |
 | `write` | 覆盖重建 | 整个文件重写，未指定的内容全部丢弃；文件不存在则创建（含父目录） |
-| `edit` | 精准修改 | 基于 `old_string` / `new_string` 做字符串替换，只改动命中部分 |
+| `edit` | 精准修改 | 基于 unified diff 定位并替换，按内容匹配、容忍行号与上下文不精确，只改动命中部分 |
 | `bash` | 执行 | 在指定目录下执行 shell 命令，返回 stdout / stderr / 退出码 |
 
 `update` / `delete` 等基于文件语义的操作通过 `edit` / `write` 表达。修改已有文件优先用 `edit`，新建或整体重写才用 `write`。
@@ -121,7 +121,6 @@ go vet ./...           # 静态检查
 - [`internal/handler/`](./internal/handler/)：工具命令与各协议解析。
 - [`internal/llm/openai.go`](./internal/llm/openai.go)：OpenAI 兼容接口实现。
 
-## 路线图
 
 - [ ] 会话层的多轮循环：把工具结果回填成下一轮的 prompt。
 - [ ] write / edit 的安全确认策略（哪些路径需要用户批准后才能写）。

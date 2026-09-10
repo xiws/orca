@@ -136,46 +136,6 @@ func TestEditHandlerFailsAtomically(t *testing.T) {
 	}
 }
 
-func TestEditHandlerLineRangeFragment(t *testing.T) {
-	ws, handle := newWorkspace(t)
-	seed(t, ws, "test.md", sampleFile)
-
-	replaced := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
-		{Start: 1, End: 2, Content: "modify content"},
-	}))
-	if !replaced.OK {
-		t.Fatalf("edit result = %+v", replaced)
-	}
-	if got := readRawFile(t, ws, "test.md"); got != "modify content\nline three\n" {
-		t.Fatalf("file content = %q", got)
-	}
-
-	// An empty replacement removes the range.
-	removed := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{
-		{Start: 1, End: 1},
-	}))
-	if !removed.OK {
-		t.Fatalf("removal edit = %+v", removed)
-	}
-	if got := readRawFile(t, ws, "test.md"); got != "line three\n" {
-		t.Fatalf("file content = %q, want the first line gone", got)
-	}
-
-	beyond := handleOne(t, handle, NewEditOption(3, "test.md", []EditFragment{
-		{Start: 5, End: 9, Content: "x"},
-	}))
-	if beyond.OK || !strings.Contains(beyond.Err, "beyond the end of the file") {
-		t.Fatalf("out of range edit = %+v", beyond)
-	}
-
-	far := handleOne(t, handle, NewEditOption(4, "test.md", []EditFragment{
-		{Start: 100, End: 101, Content: " modify content"},
-	}))
-	if far.OK || !strings.Contains(far.Err, "start line 100") {
-		t.Fatalf("edit at line 100 of a 3 line file = %+v", far)
-	}
-}
-
 func TestEditHandlerValidatesInput(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "test.md", sampleFile)
@@ -185,9 +145,9 @@ func TestEditHandlerValidatesInput(t *testing.T) {
 		t.Fatalf("edit without fragments = %+v", empty)
 	}
 
-	noLocator := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{{Content: "x"}}))
-	if noLocator.OK || !strings.Contains(noLocator.Err, ErrFragmentLocator.Error()) {
-		t.Fatalf("fragment without a locator = %+v", noLocator)
+	noDiff := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{{}}))
+	if noDiff.OK || !strings.Contains(noDiff.Err, ErrFragmentLocator.Error()) {
+		t.Fatalf("fragment without a diff = %+v", noDiff)
 	}
 
 	missing := handleOne(t, handle, NewEditOption(3, "nope.md", []EditFragment{{Diff: "@@\n- a\n+ b\n"}}))
@@ -229,17 +189,6 @@ func TestEditHandlerConvertsCRLFToLF(t *testing.T) {
 	}
 	if got := readRawFile(t, ws, "win.md"); got != "ONE\nTWO\nthree\n" {
 		t.Fatalf("file content = %q, want LF-only output", got)
-	}
-
-	// After hunkpatch converts to LF, the line range editing also produces LF.
-	lineEdit := handleOne(t, handle, NewEditOption(2, "win.md", []EditFragment{
-		{Start: 3, End: 3, Content: "THREE"},
-	}))
-	if !lineEdit.OK {
-		t.Fatalf("line edit = %+v", lineEdit)
-	}
-	if got := readRawFile(t, ws, "win.md"); got != "ONE\nTWO\nTHREE\n" {
-		t.Fatalf("file content = %q, want LF-only output after hunkpatch conversion", got)
 	}
 }
 

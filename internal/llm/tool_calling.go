@@ -109,14 +109,11 @@ func WriteTool() Tool {
 }
 
 // EditTool describes the edit command: a list of fragments applied to a file in
-// order, each located either by a unified diff (hunkpatch applies it
-// contentually, tolerating model imprecision) or by a 1 based line range.
+// order, each a unified diff that hunkpatch applies contentually, tolerating
+// model imprecision.
 func EditTool() Tool {
 	fragment := ObjectProperty("A single replacement to apply to the file", map[string]ToolSchema{
-		"diff":    StringProperty("Unified diff to apply; line numbers are ignored, matching is content-based and tolerates model imprecision via hunkpatch's fuzzy algorithm"),
-		"start":   IntegerProperty("First line of the range to replace, 1 based and inclusive; an alternative locator to diff"),
-		"end":     IntegerProperty("Last line of the range to replace, 1 based and inclusive; defaults to start"),
-		"content": StringProperty("Replacement lines when the fragment is located by start/end instead of diff"),
+		"diff": StringProperty("Unified diff to apply; line numbers are ignored, matching is content-based and tolerates model imprecision via hunkpatch's fuzzy algorithm"),
 	})
 	return NewTool(ToolEdit,
 		"Apply one or more replacements to an existing file. Fragments are applied in order and the file is only written when every one of them matches.",

@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	event2 "orca/internal/event"
+	"orca/pkg/event"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +16,30 @@ import (
 // four command handlers registered.
 func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 	t.Helper()
-	root := t.TempDir()
+	root := "/Users/zhongxiwang/workspace/golang/orca"
+	bus := event.NewEventBus()
+	if err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{}); err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+
+	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+
+	if err := bus.Subscribe(event2.ToolBeforeEvent{}, event2.ToolEventBeforeHandler{}); err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+
+	if err := bus.Subscribe(event2.TaskComplateEvent{}, event2.TaskComplateEventHandler{}); err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+
 	handle := command.NewCommandHandle()
-	if err := Register(handle, Workspace{Root: root}); err != nil {
+	if err := Register(handle, Workspace{Root: root, Publisher: bus}); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
-	return Workspace{Root: root}, handle
+
+	return Workspace{Root: root, Publisher: bus}, handle
 }
 
 // seed writes content to name inside ws and returns the full path.
@@ -76,7 +96,7 @@ func handleOne(t *testing.T, handle *command.CommandHandle, cmd command.CommandO
 func TestRegisterDispatchesAllCommands(t *testing.T) {
 	ws, handle := newWorkspace(t)
 
-	created := handleOne(t, handle, NewWriteOption(1, "notes/a.md", "# title\n\nbody\n"))
+	created := handleOne(t, handle, NewWriteOption(1, "docs/test.md", "# title\n\nbody\n"))
 	if !created.OK {
 		t.Fatalf("write result = %+v", created)
 	}
