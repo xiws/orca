@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"orca/internal/event"
 	"orca/pkg/command"
 )
 
@@ -15,11 +16,7 @@ type CreateTaskOption struct {
 }
 
 type CreateTaskHandler struct {
-}
-
-// NewCreateTaskHandler create a task
-func NewCreateTaskHandler() *CreateTaskHandler {
-	return &CreateTaskHandler{}
+	Workspace
 }
 
 // GetId returns the invocation id that correlates the result with this call.
@@ -39,6 +36,8 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 		return ErrUnsupportedOption, nil
 	}
 
+	var shell = fmt.Sprintf("create_task %s ", opt.TaskTarget[0].Title)
+	h.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
 	var targets []TaskBaseInfo
 	var isHasTarget bool = false
 	for _, target := range opt.TaskTarget {

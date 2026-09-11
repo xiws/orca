@@ -97,7 +97,7 @@ func Register(handle *command.CommandHandle, ws Workspace) error {
 		{&WriteOption{}, WriteHandler{Workspace: ws}},
 		{&EditOption{}, EditHandler{Workspace: ws}},
 		{&BashOption{}, BashHandler{Workspace: ws}},
-		{&CreateTaskOption{}, &CreateTaskHandler{}},
+		{&CreateTaskOption{}, &CreateTaskHandler{Workspace: ws}},
 	}
 
 	for _, entry := range entries {

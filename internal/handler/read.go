@@ -28,7 +28,19 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	t.Publisher.Publish(event.NewToolBeforeEvent(shell, readOption.Reasoning, readOption.Id))
 	content, err := t.read(readOption)
 	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, readOption.Id))
-	return nil, ResultFor(readOption, content, err)
+
+	if err != nil {
+		return err, CommandResult{}
+	}
+
+	return nil, CommandResult{
+		Content:    content,
+		Id:         readOption.Id,
+		Command:    fmt.Sprintf("read %s ", readOption.Filename),
+		OK:         true,
+		Err:        "",
+		TaskTarget: make([]TaskBaseInfo, 0),
+	}
 }
 
 func (t ReadHandler) read(opt *ReadOption) (string, error) {
