@@ -29,10 +29,11 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandRead), nil
 	}
 
-	var shell = t.getShell(readOption)
-	publish(t.Publisher, event.NewToolBeforeEvent(shell, readOption.Reasoning, readOption.Id))
+	meta := t.buildMeta(readOption)
+	publish(t.Publisher, event.NewToolBeforeEvent("read", readOption.Filename, meta, readOption.Reasoning, readOption.Id))
 	content, err := t.read(readOption)
-	publish(t.Publisher, event.NewToolAfterEvent(shell, content, readOption.Id))
+	okStatus := err == nil
+	publish(t.Publisher, event.NewToolAfterEvent("read", readOption.Filename, content, okStatus, meta, 0, readOption.Id))
 
 	return nil, ResultFor(readOption, content, err)
 }
@@ -77,9 +78,6 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	}
 
 	var out strings.Builder
-
-	// Every line carries its 1 based number, which the tool description promises
-	// the model and which the model needs to talk about a range it just read.
 	for number := start; number <= end; number++ {
 		fmt.Fprintf(&out, "%d\t%s\n", number, lines[number-1])
 	}
@@ -88,11 +86,10 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	return out.String(), nil
 }
 
-func (t ReadHandler) getShell(opt *ReadOption) string {
-	var cmd = fmt.Sprintf("read %s", opt.Filename)
+// buildMeta returns the contextual description for a read operation.
+func (t ReadHandler) buildMeta(opt *ReadOption) string {
 	if opt.Start > 0 || opt.End > 0 {
-		cmd = fmt.Sprintf("%s-%d:%d", cmd, opt.Start, opt.End)
+		return fmt.Sprintf("lines %d-%d", opt.Start, opt.End)
 	}
-
-	return cmd
+	return "entire file"
 }

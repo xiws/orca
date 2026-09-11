@@ -2,7 +2,7 @@
 
 .PHONY: run
 run:
-	go run ./cmd/cli  "总结cmd/cli/args.go文件的逻辑到./docs/test.md"
+	go run ./cmd/cli  "生成一个单元测试文件,为./internal/llm/openai.go文件"
 
 .PHONY:build
 build:
@@ -10,4 +10,4 @@ build:
 
 .PHONY: publish
 publish: build
-	cp ./orca /usr/local/bin/
+	sudo cp ./orca /usr/local/bin/

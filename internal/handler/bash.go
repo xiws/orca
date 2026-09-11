@@ -40,23 +40,30 @@ func (t BashHandler) Handle(cmd command.CommandOption) (error, any) {
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandBash), nil
 	}
-	output, err := t.run(opt)
+
+	// Publish before-event with the command itself as meta.
+	publish(t.Publisher, event.NewToolBeforeEvent("bash", "", opt.Content, opt.Reasoning, opt.Id))
+
+	output, exitCode, err := t.run(opt)
+
+	// After-event: summary carries the original command, exitCode for bash-specific rendering.
+	publish(t.Publisher, event.NewToolAfterEvent("bash", "", output, err == nil, opt.Content, exitCode, opt.Id))
 
 	return nil, ResultFor(opt, output, err)
 }
 
-func (t BashHandler) run(opt *BashOption) (string, error) {
+func (t BashHandler) run(opt *BashOption) (string, int, error) {
 	if strings.TrimSpace(opt.Content) == "" {
-		return "", ErrEmptyCommand
+		return "", 0, ErrEmptyCommand
 	}
 
 	if err := validateCommand(opt.Content); err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	dir, err := t.workdir(opt.Workdir)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	timeout := opt.Timeout
 	if timeout <= 0 {
@@ -68,13 +75,9 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 
 	shell, shellArgs := shellCommand(opt.Content)
 
-	cmdStr := shell + " " + strings.Join(shellArgs, " ")
-	publish(t.Publisher, event.NewToolBeforeEvent(cmdStr, opt.Reasoning, opt.Id))
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = groupAttr()
-	// A timeout has to take the children of the shell down as well, otherwise a
-	// command that forked would keep running unattended.
 	cmd.Cancel = func() error { return killGroup(cmd) }
 	cmd.WaitDelay = killGrace
 
@@ -89,20 +92,16 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
-		return report, fmt.Errorf("timed out after %d seconds", timeout)
+		return report, -1, fmt.Errorf("timed out after %d seconds", timeout)
 	}
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
-		return report, fmt.Errorf("exit status %d", exitErr.ExitCode())
+		return report, exitErr.ExitCode(), fmt.Errorf("exit status %d", exitErr.ExitCode())
 	}
 	if runErr != nil {
-		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
-		return report, runErr
+		return report, -1, runErr
 	}
-	publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
-	return report, nil
+	return report, 0, nil
 }
 
 // workdir resolves the directory the command runs in, defaulting to the root of

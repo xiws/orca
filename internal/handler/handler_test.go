@@ -22,10 +22,6 @@ func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 	t.Helper()
 	root := t.TempDir()
 	bus := event.NewEventBus()
-	if err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{}); err != nil {
-		t.Fatalf("Subscribe() error = %v", err)
-	}
-
 	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}

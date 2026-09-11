@@ -75,10 +75,6 @@ func NewRuntime() *Runtime {
 // event.Event.GetName.
 func registerEvent() (event.EventPublisher, error) {
 	bus := event.NewEventBus()
-	if err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{}); err != nil {
-		return nil, err
-	}
-
 	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"orca/internal/event"
 	"orca/pkg/command"
+	"strings"
 )
 
 // CreateTaskOption is the "createTask" command parameter: it carries the
@@ -36,11 +37,8 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 		return ErrUnsupportedOption, nil
 	}
 
-	var shell = "create_task"
-	if len(opt.TaskTarget) > 0 {
-		shell = fmt.Sprintf("create_task %s ", opt.TaskTarget[0].Title)
-	}
-	publish(h.Publisher, event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	meta := h.buildMeta(opt)
+	publish(h.Publisher, event.NewToolBeforeEvent("create_task", "", meta, opt.Reasoning, opt.Id))
 
 	var targets []TaskBaseInfo
 	for _, target := range opt.TaskTarget {
@@ -54,7 +52,19 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 		return nil, ResultFor(cmd, "", fmt.Errorf("task_target is required"))
 	}
 
-	var result = ResultFor(cmd, "", nil)
+	result := ResultFor(cmd, "", nil)
 	result.TaskTarget = targets
 	return nil, result
+}
+
+// buildMeta returns the contextual description for a create_task operation.
+func (h *CreateTaskHandler) buildMeta(opt *CreateTaskOption) string {
+	if len(opt.TaskTarget) == 0 {
+		return "create_task (0 sub-tasks)"
+	}
+	titles := make([]string, 0, len(opt.TaskTarget))
+	for _, t := range opt.TaskTarget {
+		titles = append(titles, t.Title)
+	}
+	return fmt.Sprintf("Create sub-tasks: %s", strings.Join(titles, ", "))
 }

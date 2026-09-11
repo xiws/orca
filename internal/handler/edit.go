@@ -24,10 +24,11 @@ func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandEdit), nil
 	}
-	var shell = t.getShell(opt)
-	publish(t.Publisher, event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	meta := t.buildMeta(opt)
+	publish(t.Publisher, event.NewToolBeforeEvent("edit", opt.Filename, meta, opt.Reasoning, opt.Id))
 	summary, err := t.edit(opt)
-	publish(t.Publisher, event.NewToolAfterEvent(shell, summary, opt.Id))
+	okStatus := err == nil
+	publish(t.Publisher, event.NewToolAfterEvent("edit", opt.Filename, "", okStatus, summary, 0, opt.Id))
 	return nil, ResultFor(opt, summary, err)
 }
 
@@ -65,21 +66,12 @@ func (t EditHandler) edit(opt *EditOption) (string, error) {
 		resolved, strings.Join(summaries, ", "), len(splitLines(original)), len(splitLines(updated))), nil
 }
 
-func (t EditHandler) getShell(opt *EditOption) string {
-	if opt == nil {
-		return ""
+// buildMeta returns the contextual description for an edit operation.
+func (t EditHandler) buildMeta(opt *EditOption) string {
+	if opt == nil || len(opt.Contents) == 0 {
+		return "0 fragments"
 	}
-
-	args := []string{"edit", opt.Filename}
-
-	for _, fragment := range opt.Contents {
-		if fragment.Diff != "" {
-			oneLine := strings.ReplaceAll(fragment.Diff, "\n", "\\n")
-			args = append(args, "--diff", oneLine)
-		}
-	}
-
-	return strings.Join(args, " ")
+	return fmt.Sprintf("%d fragment(s)", len(opt.Contents))
 }
 
 // applyFragment applies one replacement to content and returns the new content
@@ -112,7 +104,6 @@ func applyDiffFragment(content string, index int, fragment EditFragment) (string
 		return "", "", fmt.Errorf("fragment %d: %w", index, err)
 	}
 	if result.Applied == 0 {
-		// Every hunk left the text unchanged (e.g. old == new, or anchor-only).
 		return content, "no hunks applied (content unchanged)", nil
 	}
 	return result.Text, fmt.Sprintf("applied %d hunk(s)", result.Applied), nil

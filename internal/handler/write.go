@@ -19,10 +19,11 @@ func (t WriteHandler) Handle(cmd command.CommandOption) (error, any) {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandWrite), nil
 	}
 
-	shell := fmt.Sprintf("write %s %s", opt.Filename, opt.Content)
-	publish(t.Publisher, event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	meta := fmt.Sprintf("%d bytes", len(opt.Content))
+	publish(t.Publisher, event.NewToolBeforeEvent("write", opt.Filename, meta, opt.Reasoning, opt.Id))
 	summary, err := t.write(opt)
-	publish(t.Publisher, event.NewToolAfterEvent(shell, summary, opt.Id))
+	okStatus := err == nil
+	publish(t.Publisher, event.NewToolAfterEvent("write", opt.Filename, "", okStatus, summary, 0, opt.Id))
 
 	return nil, ResultFor(opt, summary, err)
 }
