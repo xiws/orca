@@ -2,7 +2,7 @@
 
 .PHONY: run
 run:
-	go run ./cmd/cli -f ./docs/test.md "原样输出文档内容，不要包括任何内容"
+	go run ./cmd/cli  "总结cmd/cli/args.go文件的逻辑到./docs/test.md"
 
 .PHONY:build
 build:

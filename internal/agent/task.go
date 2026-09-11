@@ -5,7 +5,6 @@ import "orca/pkg/utils"
 type Task struct {
 	Id          int64    `json:"id"`
 	TaskResult  string   `json:"task_result"`
-	Children    []*Task  `json:"children"`
 	SessionInfo *Session `json:"session_info"`
 	TaskTarget  string   `json:"task_target"`
 	TaskTitle   string   `json:"task_title"`
@@ -14,7 +13,6 @@ type Task struct {
 func NewTask(taskTarget, title string) *Task {
 	var session = NewSession()
 	return &Task{
-		Children:    nil,
 		SessionInfo: session,
 		TaskResult:  "",
 		Id:          utils.GetSnowFlakeId(),

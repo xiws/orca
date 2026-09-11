@@ -5,6 +5,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"orca/pkg/utils"
@@ -50,7 +51,7 @@ type CommandResult struct {
 	OK      bool   `json:"ok"`
 	// Content carries the command payload: file contents for read, merged
 	// stdout and stderr for bash, a change summary for write and edit.
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
 	// Err holds a short reason and is empty when OK is true.
 	Err        string         `json:"err,omitempty"`
 	TaskTarget []TaskBaseInfo `json:"task_target,omitempty"`
@@ -62,7 +63,23 @@ type TaskBaseInfo struct {
 }
 
 func (u CommandResult) String() string {
-	return fmt.Sprintf("task id:%d \ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
+	if u.OK {
+		return fmt.Sprintf("task id:%d \ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
+	}
+	return fmt.Sprintf("task id:%d \ncommand:%s\nfailed:%s", u.Id, u.Command, u.Err)
+}
+
+// JSON renders the result the way it travels to the model: one structured
+// object per tool call, carrying its identity, its outcome and, on failure, the
+// reason. The model reads it as data and can act on ok:false without the
+// runtime having to treat a business failure as a fatal error.
+func (u CommandResult) JSON() string {
+	data, err := json.Marshal(u)
+	if err != nil {
+		// The struct holds plain values, so this cannot realistically fail.
+		return fmt.Sprintf(`{"ok":false,"command":%q,"err":%q}`, u.Command, err.Error())
+	}
+	return string(data)
 }
 
 // NewResult builds a CommandResult for the given identity. A non-nil err marks

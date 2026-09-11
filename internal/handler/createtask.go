@@ -36,19 +36,21 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 		return ErrUnsupportedOption, nil
 	}
 
-	var shell = fmt.Sprintf("create_task %s ", opt.TaskTarget[0].Title)
-	h.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	var shell = "create_task"
+	if len(opt.TaskTarget) > 0 {
+		shell = fmt.Sprintf("create_task %s ", opt.TaskTarget[0].Title)
+	}
+	publish(h.Publisher, event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+
 	var targets []TaskBaseInfo
-	var isHasTarget bool = false
 	for _, target := range opt.TaskTarget {
 		if target.Title == "" || target.Description == "" {
 			continue
 		}
-		isHasTarget = true
 		targets = append(targets, target)
 	}
 
-	if !isHasTarget {
+	if len(targets) == 0 {
 		return nil, ResultFor(cmd, "", fmt.Errorf("task_target is required"))
 	}
 

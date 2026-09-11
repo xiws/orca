@@ -121,8 +121,8 @@ type sentRequest struct {
 
 // TestRequestSendsToolsOnlyWhenModelSupportsThem pins down the request side of
 // tool calling: the built-in commands are declared as OpenAI tools only for a
-// model that reports tool support, and the prompt fields travel as system,
-// tool, user messages with streaming requested.
+// model that reports tool support, and the conversation travels in order with
+// streaming requested.
 func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -153,7 +153,6 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 			})
 			result := requester.Request([]ChatMessage{
 				{Role: RoleSystem, Content: "You are a concise assistant."},
-				{Role: RoleTool, Content: "Call read with a filename."},
 				{Role: RoleUser, Content: "Read README.md"},
 			}, nil)
 			if result.Error != nil {
@@ -166,7 +165,7 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 			if !sent.Stream {
 				t.Error("request should ask for a streamed response")
 			}
-			wantRoles := []string{RoleSystem, RoleTool, RoleUser}
+			wantRoles := []string{RoleSystem, RoleUser}
 			if len(sent.Messages) != len(wantRoles) {
 				t.Fatalf("sent %d messages, want %d", len(sent.Messages), len(wantRoles))
 			}
@@ -192,6 +191,60 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRequestBodyKeepsToolProtocolOrder checks the wire form of a full tool
+// calling round trip: the assistant turn that asks for a tool, the tool message
+// that answers it by id, and the next assistant turn.
+//
+// Losing either half is what makes a model lose track of what it has already
+// done: without the assistant message the tool output has no author, and
+// without the tool_call_id a strict server rejects the whole conversation.
+func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
+	client := &openAIClient{info: ModelInfo{ModelID: "fake-model", SupportsTools: true}}
+	body := client.body([]ChatMessage{
+		{Role: RoleSystem, Content: "You are a coding agent."},
+		{Role: RoleUser, Content: "Summarise a.md"},
+		{Role: RoleAssistant, ToolCalls: []ToolCall{
+			{ID: "call-1", Name: ToolRead, Arguments: `{"filename":"a.md"}`},
+			{ID: "call-2", Name: ToolBash, Arguments: `{"content":"pwd"}`},
+		}},
+		{Role: RoleTool, ToolCallID: "call-1", Content: `{"ok":true}`},
+		{Role: RoleTool, ToolCallID: "call-2", Content: `{"ok":true}`},
+		{Role: RoleAssistant, Content: "done"},
+		// An empty entry no longer carries anything the model can use and must
+		// not reach the wire at all.
+		{Role: RoleUser, Content: ""},
+	})
+
+	var sent sentRequest
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("Unmarshal() error = %v, body: %s", err, body)
+	}
+
+	wantRoles := []string{RoleSystem, RoleUser, RoleAssistant, RoleTool, RoleTool, RoleAssistant}
+	if len(sent.Messages) != len(wantRoles) {
+		t.Fatalf("sent %d messages, want %d: %s", len(sent.Messages), len(wantRoles), body)
+	}
+	for i, want := range wantRoles {
+		if got := sent.Messages[i].Role; got != want {
+			t.Errorf("message %d role = %q, want %q", i, got, want)
+		}
+	}
+
+	assistant := sent.Messages[2]
+	if len(assistant.ToolCalls) != 2 {
+		t.Fatalf("assistant tool calls = %d, want 2", len(assistant.ToolCalls))
+	}
+	if got := assistant.ToolCalls[0]; got.ID != "call-1" || got.Type != ToolType || got.Function.Name != ToolRead || got.Function.Arguments != `{"filename":"a.md"}` {
+		t.Errorf("assistant tool call = %+v, want the read call in OpenAI shape", got)
+	}
+
+	for i, wantID := range []string{"call-1", "call-2"} {
+		if got := sent.Messages[3+i].ToolCallID; got != wantID {
+			t.Errorf("tool message %d answers %q, want %q", i, got, wantID)
+		}
 	}
 }
 

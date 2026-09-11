@@ -18,6 +18,11 @@ type ReadHandler struct {
 }
 
 // Handle returns the requested line range of a file, prefixed by line numbers.
+//
+// A file that cannot be read — missing, outside the workspace, with a range
+// beyond its end — is a failed CommandResult, not a Go error. The model has to
+// be able to read the reason and try another path; aborting the whole task on a
+// guess that did not pan out is what a failed read used to do.
 func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	readOption, ok := cmd.(*ReadOption)
 	if !ok {
@@ -25,22 +30,11 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	}
 
 	var shell = t.getShell(readOption)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, readOption.Reasoning, readOption.Id))
+	publish(t.Publisher, event.NewToolBeforeEvent(shell, readOption.Reasoning, readOption.Id))
 	content, err := t.read(readOption)
-	t.Publisher.Publish(event.NewToolAfterEvent(shell, content, readOption.Id))
+	publish(t.Publisher, event.NewToolAfterEvent(shell, content, readOption.Id))
 
-	if err != nil {
-		return err, CommandResult{}
-	}
-
-	return nil, CommandResult{
-		Content:    content,
-		Id:         readOption.Id,
-		Command:    fmt.Sprintf("read %s ", readOption.Filename),
-		OK:         true,
-		Err:        "",
-		TaskTarget: make([]TaskBaseInfo, 0),
-	}
+	return nil, ResultFor(readOption, content, err)
 }
 
 func (t ReadHandler) read(opt *ReadOption) (string, error) {
@@ -84,12 +78,10 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 
 	var out strings.Builder
 
+	// Every line carries its 1 based number, which the tool description promises
+	// the model and which the model needs to talk about a range it just read.
 	for number := start; number <= end; number++ {
-		if opt.SetNumber {
-			fmt.Fprintf(&out, "%d\t%s\n", number, lines[number-1])
-		} else {
-			fmt.Fprintf(&out, "%s\n", lines[number-1])
-		}
+		fmt.Fprintf(&out, "%d\t%s\n", number, lines[number-1])
 	}
 
 	out.WriteString(truncated)
@@ -98,8 +90,7 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 
 func (t ReadHandler) getShell(opt *ReadOption) string {
 	var cmd = fmt.Sprintf("read %s", opt.Filename)
-	if opt.SetNumber {
-
+	if opt.Start > 0 || opt.End > 0 {
 		cmd = fmt.Sprintf("%s-%d:%d", cmd, opt.Start, opt.End)
 	}
 

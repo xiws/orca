@@ -1,10 +1,8 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"orca/internal/agent"
-	"orca/internal/handler"
 	"orca/internal/llm"
 	"orca/pkg/utils"
 	"os"
@@ -14,20 +12,34 @@ import (
 func main() {
 	args, err := ParseArgs()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "orca:", err)
 		os.Exit(1)
 	}
 
 	runtime := agent.NewRuntime()
-	task := CreateTask(args, runtime)
+	task, err := CreateTask(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "orca:", err)
+		os.Exit(1)
+	}
+
 	err, result := runtime.RunTask(task)
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, "orca:", err)
+		os.Exit(1)
 	}
 	fmt.Println(result)
 }
 
-func CreateTask(args *CliArgs, runtime *agent.Runtime) *agent.Task {
+// CreateTask builds the conversation handed to the runtime: one system message
+// describing the rules the model works under, then one user message carrying the
+// attached files and the request itself.
+//
+// Attached files travel inside the user turn. They used to be appended as tool
+// messages, which no server can accept: a tool message must answer a tool call
+// made by the assistant message before it, and there is none at the start of a
+// conversation.
+func CreateTask(args *CliArgs) (*agent.Task, error) {
 	var task = agent.NewTask(args.Prompt, "")
 	if args.Model != "" && args.Provider != "" {
 		task.SessionInfo.SetProvider(args.Provider, args.Model)
@@ -36,46 +48,37 @@ func CreateTask(args *CliArgs, runtime *agent.Runtime) *agent.Task {
 	if args.SystemPrompt != "" {
 		buffer, err := os.ReadFile(args.SystemPrompt)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("read system prompt %s: %w", args.SystemPrompt, err)
 		}
-
 		task.SessionInfo.AppendMessage(llm.RoleSystem, string(buffer))
 	} else {
 		data := agent.PromptContext{
 			ProjectPath:   utils.GetCurrentPath(),
 			ContextLength: task.SessionInfo.Provider.ContextWindow,
 		}
-
-		var defaultPrompt = utils.GetSystemPrompt(data)
-		task.SessionInfo.AppendMessage(llm.RoleSystem, defaultPrompt)
+		task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
 	}
 
-	if args.Files != nil && len(args.Files) > 0 {
-		for _, file := range args.Files {
-			task.SessionInfo.AppendMessage(llm.RoleTool, readTxt(file, runtime))
-		}
+	prompt, err := userPrompt(args)
+	if err != nil {
+		return nil, err
 	}
-
-	prompt := fmt.Sprintf("attach files: %s;user description:%s", strings.Join(args.Files, ","), args.Prompt)
 	task.SessionInfo.AppendMessage(llm.RoleUser, prompt)
-
-	return task
+	return task, nil
 }
 
-func readTxt(filename string, runtime *agent.Runtime) string {
-	var id = utils.GetSnowFlakeId()
-	cmd := handler.NewReadOption(id, filename, 0, 0)
-	var err, res = runtime.ExecuteCommand(cmd)
-	if err != nil {
-		panic(err)
+// userPrompt renders the user turn: every attached file wrapped in a <file>
+// element, followed by the request itself.
+func userPrompt(args *CliArgs) (string, error) {
+	var builder strings.Builder
+	for _, file := range args.Files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read attached file %s: %w", file, err)
+		}
+		content := strings.TrimRight(string(data), "\n")
+		fmt.Fprintf(&builder, "<file path=%q>\n%s\n</file>\n\n", file, content)
 	}
-
-	msg, ok := res.(handler.CommandResult)
-	if !ok {
-		panic("should be string")
-	}
-	if !msg.OK {
-		panic(errors.New(msg.Err))
-	}
-	return msg.Content
+	builder.WriteString(args.Prompt)
+	return builder.String(), nil
 }

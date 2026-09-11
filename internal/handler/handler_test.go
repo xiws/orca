@@ -14,9 +14,13 @@ import (
 
 // newWorkspace returns a workspace rooted in a temporary directory, with all
 // four command handlers registered.
+//
+// The root is a fresh temporary directory rather than the repository itself:
+// the write and edit tests really create files, and pointing them at the
+// checkout used to litter it.
 func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 	t.Helper()
-	root := "/Users/zhongxiwang/workspace/golang/orca"
+	root := t.TempDir()
 	bus := event.NewEventBus()
 	if err := bus.Subscribe(event2.BashEvent{}, event2.BashEventHandler{}); err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -103,16 +107,16 @@ func TestRegisterDispatchesAllCommands(t *testing.T) {
 	if created.Command != CommandWrite || created.Id != 1 {
 		t.Fatalf("write result = %+v, want command write and id 1", created)
 	}
-	if got := readRawFile(t, ws, "notes/a.md"); got != "# title\n\nbody\n" {
+	if got := readRawFile(t, ws, "docs/test.md"); got != "# title\n\nbody\n" {
 		t.Fatalf("file content = %q", got)
 	}
 
-	read := handleOne(t, handle, NewReadOption(1, "notes/a.md", 1, 1))
+	read := handleOne(t, handle, NewReadOption(1, "docs/test.md", 1, 1))
 	if !read.OK || read.Content != "1\t# title\n" {
 		t.Fatalf("read result = %+v", read)
 	}
 
-	edited := handleOne(t, handle, NewEditOption(1, "notes/a.md", []EditFragment{
+	edited := handleOne(t, handle, NewEditOption(1, "docs/test.md", []EditFragment{
 		{Diff: "@@\n \n- body\n+ content\n"},
 	}))
 	if !edited.OK {

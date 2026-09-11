@@ -31,9 +31,32 @@ func NewOpenAIRequester(info ModelInfo) Requester {
 }
 
 // chatMessage is a single message in the OpenAI chat protocol.
+//
+// ToolCalls is set on an assistant message that asks for tools, ToolCallID on
+// the tool messages that answer one call each. The protocol requires those two
+// halves to match: a tool message whose tool_call_id names no call of the
+// assistant message right before it is rejected by a strict server and
+// misread by a lenient one.
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// chatToolCall is the wire form of one invocation inside an assistant message:
+// the call id, the constant type OpenAI accepts today, and the function name
+// together with its arguments as a JSON encoded string.
+type chatToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function chatToolFunction `json:"function"`
+}
+
+// chatToolFunction is the "function" payload of a chatToolCall.
+type chatToolFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // chatRequest is the JSON body sent to /chat/completions.
@@ -170,7 +193,7 @@ func (c *openAIClient) Request(prompts []ChatMessage, msgs chan<- string) Result
 	}
 
 	result.Content = content.String()
-	result.ToolCalls = orderedToolCalls(toolCalls)
+	result.ToolCalls = EnsureToolCallIDs(orderedToolCalls(toolCalls))
 	return result
 }
 
@@ -187,10 +210,11 @@ func (c *openAIClient) endpoint() string {
 func (c *openAIClient) body(prompts []ChatMessage) []byte {
 	messages := make([]chatMessage, 0, len(prompts))
 	for _, prompt := range prompts {
-		if prompt.Content == "" {
+		message, ok := wireMessage(prompt)
+		if !ok {
 			continue
 		}
-		messages = append(messages, chatMessage{Role: prompt.Role, Content: prompt.Content})
+		messages = append(messages, message)
 	}
 	request := chatRequest{
 		Model:    c.info.ModelID,
@@ -208,6 +232,35 @@ func (c *openAIClient) body(prompts []ChatMessage) []byte {
 	return payload
 }
 
+// wireMessage translates one internal ChatMessage into its wire form. It
+// reports false only for a message that carries nothing at all, which no
+// correctly built conversation produces.
+//
+// An assistant turn whose content is empty but which carries tool calls is
+// kept: it is the half of the exchange the tool messages answer, and dropping
+// it — as a plain "skip empty content" rule used to — severs the protocol.
+func wireMessage(prompt ChatMessage) (chatMessage, bool) {
+	message := chatMessage{
+		Role:       prompt.Role,
+		Content:    prompt.Content,
+		ToolCallID: prompt.ToolCallID,
+	}
+	if len(prompt.ToolCalls) > 0 {
+		message.ToolCalls = make([]chatToolCall, 0, len(prompt.ToolCalls))
+		for _, call := range prompt.ToolCalls {
+			message.ToolCalls = append(message.ToolCalls, chatToolCall{
+				ID:       call.ID,
+				Type:     ToolType,
+				Function: chatToolFunction{Name: call.Name, Arguments: call.Arguments},
+			})
+		}
+	}
+	if message.Content == "" && message.ToolCallID == "" && len(message.ToolCalls) == 0 {
+		return chatMessage{}, false
+	}
+	return message, true
+}
+
 // sseData extracts the payload of an SSE "data:" line, reporting whether the
 // line carries usable data.
 func sseData(line string) (string, bool) {
@@ -220,6 +273,20 @@ func sseData(line string) (string, bool) {
 		return "", false
 	}
 	return data, true
+}
+
+// EnsureToolCallIDs gives every call an id. The protocol requires the tool
+// message that answers a call to quote it, and a compatible server may omit
+// ids from its stream; without this the answers could not be matched and the
+// conversation would be rejected. A call that already carries an id keeps it,
+// so applying this twice is harmless.
+func EnsureToolCallIDs(calls []ToolCall) []ToolCall {
+	for i := range calls {
+		if calls[i].ID == "" {
+			calls[i].ID = fmt.Sprintf("call_%d", i)
+		}
+	}
+	return calls
 }
 
 // orderedToolCalls flattens the index-keyed tool calls into stream order.

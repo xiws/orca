@@ -2,7 +2,6 @@ package event
 
 import (
 	"errors"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,22 +13,22 @@ import (
 var eventSeq atomic.Int64
 
 type testEvent struct {
-	id   string
+	id   int64
 	name string
 }
 
 func newTestEvent() testEvent {
-	return testEvent{id: "evt-" + strconv.FormatInt(eventSeq.Add(1), 10), name: "created"}
+	return testEvent{id: eventSeq.Add(1), name: "created"}
 }
 
-func (e testEvent) GetId() string   { return e.id }
+func (e testEvent) GetId() int64    { return e.id }
 func (e testEvent) GetName() string { return e.name }
 
 type missingEvent struct{}
 
 func newMissingEvent() missingEvent { return missingEvent{} }
 
-func (missingEvent) GetId() string   { return "missing" }
+func (missingEvent) GetId() int64    { return 0 }
 func (missingEvent) GetName() string { return "not-subscribed" }
 
 type testEventHandler struct {
@@ -59,10 +58,10 @@ func TestEventBusPublishesToAllSubscribers(t *testing.T) {
 	first := &testEventHandler{receive: make(chan Event, 1)}
 	second := &testEventHandler{receive: make(chan Event, 1)}
 	ent := newTestEvent()
-	if err := bus.Subscribe(ent.GetName(), first); err != nil {
+	if err := bus.Subscribe(ent, first); err != nil {
 		t.Fatal(err)
 	}
-	if err := bus.Subscriber(ent.GetName(), second); err != nil {
+	if err := bus.Subscriber(ent, second); err != nil {
 		t.Fatal(err)
 	}
 	if err := bus.Publish(ent); err != nil {
@@ -82,16 +81,16 @@ func TestEventBusRejectsInvalidOperations(t *testing.T) {
 	handler := &testEventHandler{}
 	ent := newTestEvent()
 
-	if err := bus.Subscribe("", handler); !errors.Is(err, ErrNilEvent) {
+	if err := bus.Subscribe(testEvent{}, handler); !errors.Is(err, ErrNilEvent) {
 		t.Fatalf("empty id error = %v", err)
 	}
-	if err := bus.Subscribe("created", nil); !errors.Is(err, ErrNilEventHandler) {
+	if err := bus.Subscribe(ent, nil); !errors.Is(err, ErrNilEventHandler) {
 		t.Fatalf("nil handler error = %v", err)
 	}
-	if err := bus.Subscribe(ent.GetName(), handler); err != nil {
+	if err := bus.Subscribe(ent, handler); err != nil {
 		t.Fatal(err)
 	}
-	if err := bus.Subscribe(ent.GetName(), handler); !errors.Is(err, ErrDuplicateSubscription) {
+	if err := bus.Subscribe(ent, handler); !errors.Is(err, ErrDuplicateSubscription) {
 		t.Fatalf("duplicate subscription error = %v", err)
 	}
 	if err := bus.Publish(newMissingEvent()); !errors.Is(err, ErrNoSubscribers) {
@@ -106,7 +105,7 @@ func TestEventBusQueueAndClose(t *testing.T) {
 	bus := NewEventBus()
 	handler := &testEventHandler{}
 	ent := newTestEvent()
-	if err := bus.Subscribe(ent.GetName(), handler); err != nil {
+	if err := bus.Subscribe(ent, handler); err != nil {
 		t.Fatal(err)
 	}
 	if got := cap(bus.queue); got != QueueCapacity {
@@ -128,7 +127,7 @@ func TestEventBusQueueAndClose(t *testing.T) {
 	if err := bus.Publish(ent); !errors.Is(err, ErrEventBusClosed) {
 		t.Fatalf("Publish() after Close error = %v", err)
 	}
-	if err := bus.Subscribe(ent.GetName(), handler); !errors.Is(err, ErrEventBusClosed) {
+	if err := bus.Subscribe(ent, handler); !errors.Is(err, ErrEventBusClosed) {
 		t.Fatalf("Subscribe() after Close error = %v", err)
 	}
 	if err := bus.Close(); err != nil {
@@ -140,7 +139,7 @@ func TestEventBusConcurrentPublish(t *testing.T) {
 	bus := NewEventBus()
 	handler := &testEventHandler{}
 	ent := newTestEvent()
-	if err := bus.Subscribe(ent.GetName(), handler); err != nil {
+	if err := bus.Subscribe(ent, handler); err != nil {
 		t.Fatal(err)
 	}
 

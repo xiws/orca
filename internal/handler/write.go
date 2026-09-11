@@ -20,9 +20,9 @@ func (t WriteHandler) Handle(cmd command.CommandOption) (error, any) {
 	}
 
 	shell := fmt.Sprintf("write %s %s", opt.Filename, opt.Content)
-	t.Publisher.Publish(event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
+	publish(t.Publisher, event.NewToolBeforeEvent(shell, opt.Reasoning, opt.Id))
 	summary, err := t.write(opt)
-	t.Publisher.Publish(event.NewToolAfterEvent(shell, summary, opt.Id))
+	publish(t.Publisher, event.NewToolAfterEvent(shell, summary, opt.Id))
 
 	return nil, ResultFor(opt, summary, err)
 }

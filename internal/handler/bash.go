@@ -69,7 +69,7 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 	shell, shellArgs := shellCommand(opt.Content)
 
 	cmdStr := shell + " " + strings.Join(shellArgs, " ")
-	t.Publisher.Publish(event.NewToolBeforeEvent(cmdStr, opt.Reasoning, opt.Id))
+	publish(t.Publisher, event.NewToolBeforeEvent(cmdStr, opt.Reasoning, opt.Id))
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = groupAttr()
@@ -89,19 +89,19 @@ func (t BashHandler) run(opt *BashOption) (string, error) {
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		t.Publisher.Publish(event.NewToolAfterEvent(cmdStr, report, opt.Id))
+		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
 		return report, fmt.Errorf("timed out after %d seconds", timeout)
 	}
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		t.Publisher.Publish(event.NewToolAfterEvent(cmdStr, report, opt.Id))
+		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
 		return report, fmt.Errorf("exit status %d", exitErr.ExitCode())
 	}
 	if runErr != nil {
-		t.Publisher.Publish(event.NewToolAfterEvent(cmdStr, report, opt.Id))
+		publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
 		return report, runErr
 	}
-	t.Publisher.Publish(event.NewToolAfterEvent(cmdStr, report, opt.Id))
+	publish(t.Publisher, event.NewToolAfterEvent(cmdStr, report, opt.Id))
 	return report, nil
 }
 

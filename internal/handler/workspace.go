@@ -115,3 +115,13 @@ func within(root, path string) error {
 	}
 	return nil
 }
+
+// publish forwards an event when a publisher is configured. Handlers are also
+// built without a bus, and a nil publisher must report nothing rather than
+// panic in the middle of a command.
+func publish(publisher event.EventPublisher, ent event.Event) {
+	if publisher == nil {
+		return
+	}
+	_ = publisher.Publish(ent)
+}

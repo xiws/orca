@@ -2,14 +2,13 @@ package handler
 
 // ReadOption is the "read" command parameter: it returns the lines Start
 // through End of Filename, 1 based and inclusive. Zero means open ended, so the
-// default reads the whole file.
+// default reads the whole file. Every returned line carries its line number.
 type ReadOption struct {
 	Id        int64
 	Reasoning string
 	Filename  string
 	Start     int
 	End       int
-	SetNumber bool
 }
 
 // GetId returns the invocation id that correlates the result with this call.

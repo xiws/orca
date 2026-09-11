@@ -13,12 +13,15 @@ type PromptContext struct {
 	ToolPrompt string
 }
 
-// ToolCall is a single function/tool invocation produced by the model.
+// ToolCall is a single function/tool invocation produced by the model. The
+// json tags match the wire form OpenAI uses inside an assistant message, so a
+// recorded turn can be replayed verbatim to the model on the next request.
+// Reasoning stays local: it is the model's own thinking and is not sent back.
 type ToolCall struct {
-	ID        string
-	Name      string
-	Arguments string
-	Reasoning string // AI 调用此工具前的推理过程
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+	Reasoning string `json:"reasoning,omitempty"` // AI 调用此工具前的推理过程
 }
 
 // Usage reports token consumption for a request.
