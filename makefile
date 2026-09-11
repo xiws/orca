@@ -7,3 +7,7 @@ run:
 .PHONY:build
 build:
 	go build -o orca ./cmd/cli
+
+.PHONY: publish
+publish: build
+	cp ./orca /usr/local/bin/
