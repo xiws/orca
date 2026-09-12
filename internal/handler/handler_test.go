@@ -2,14 +2,14 @@ package handler
 
 import (
 	"errors"
-	event2 "orca/internal/event"
-	"orca/pkg/event"
+	event2 "github.com/xiws/orca/internal/event"
+	"github.com/xiws/orca/pkg/event"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"orca/pkg/command"
+	"github.com/xiws/orca/pkg/command"
 )
 
 // newWorkspace returns a workspace rooted in a temporary directory, with all

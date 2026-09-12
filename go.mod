@@ -1,4 +1,4 @@
-module orca
+module github.com/xiws/orca
 
 go 1.25.3
 

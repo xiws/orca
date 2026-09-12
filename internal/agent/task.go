@@ -1,6 +1,6 @@
 package agent
 
-import "orca/pkg/utils"
+import "github.com/xiws/orca/pkg/utils"
 
 type Task struct {
 	Id          int64    `json:"id"`

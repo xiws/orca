@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"orca/pkg/utils"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 // testCommand is a CommandOption the registry can route; the name is a constant,

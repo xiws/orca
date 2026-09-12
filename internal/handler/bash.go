@@ -5,14 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"orca/internal/event"
+	"github.com/xiws/orca/internal/event"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
-	"orca/pkg/command"
+	"github.com/xiws/orca/pkg/command"
 )
 
 const (

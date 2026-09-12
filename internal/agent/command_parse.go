@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"orca/internal/handler"
-	"orca/pkg/command"
-	"orca/pkg/utils"
+	"github.com/xiws/orca/internal/handler"
+	"github.com/xiws/orca/pkg/command"
+	"github.com/xiws/orca/pkg/utils"
 	"strconv"
 	"strings"
 )

@@ -2,8 +2,8 @@ package event
 
 import (
 	"fmt"
-	"orca/internal/tool"
-	"orca/pkg/event"
+	"github.com/xiws/orca/internal/tool"
+	"github.com/xiws/orca/pkg/event"
 	"strings"
 
 	"github.com/charmbracelet/glamour"

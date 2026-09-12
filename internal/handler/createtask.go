@@ -2,8 +2,8 @@ package handler
 
 import (
 	"fmt"
-	"orca/internal/event"
-	"orca/pkg/command"
+	"github.com/xiws/orca/internal/event"
+	"github.com/xiws/orca/pkg/command"
 	"strings"
 )
 

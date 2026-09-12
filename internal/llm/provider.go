@@ -1,7 +1,7 @@
 package llm
 
 import (
-	"orca/pkg/utils"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 var (

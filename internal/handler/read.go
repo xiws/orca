@@ -2,10 +2,10 @@ package handler
 
 import (
 	"fmt"
-	"orca/internal/event"
+	"github.com/xiws/orca/internal/event"
 	"strings"
 
-	"orca/pkg/command"
+	"github.com/xiws/orca/pkg/command"
 )
 
 // MaxReadLines caps how many lines one read command returns. Larger ranges are

@@ -3,8 +3,8 @@ package handler
 import (
 	"errors"
 	"fmt"
-	"orca/internal/event"
-	"orca/pkg/command"
+	"github.com/xiws/orca/internal/event"
+	"github.com/xiws/orca/pkg/command"
 	"strings"
 
 	"github.com/zbysir/hunkpatch"

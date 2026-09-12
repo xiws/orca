@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"orca/internal/assets"
+	"github.com/xiws/orca/internal/assets"
 	"os"
 	"strings"
 	"text/template"

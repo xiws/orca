@@ -2,7 +2,7 @@ package event
 
 import (
 	"fmt"
-	"orca/pkg/event"
+	"github.com/xiws/orca/pkg/event"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"

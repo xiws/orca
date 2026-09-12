@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"orca/internal/handler"
-	"orca/internal/llm"
-	"orca/pkg/command"
-	"orca/pkg/event"
-	"orca/pkg/utils"
+	"github.com/xiws/orca/internal/handler"
+	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/pkg/command"
+	"github.com/xiws/orca/pkg/event"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 // scriptedRequester replays a fixed list of model replies and records every

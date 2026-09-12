@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"orca/internal/agent"
-	"orca/internal/llm"
-	"orca/pkg/utils"
 	"os"
 	"strings"
+
+	"github.com/xiws/orca/internal/agent"
+	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 func main() {

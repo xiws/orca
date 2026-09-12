@@ -2,7 +2,7 @@ package handler
 
 import (
 	"fmt"
-	"orca/pkg/event"
+	"github.com/xiws/orca/pkg/event"
 	"os"
 	"path/filepath"
 	"strings"

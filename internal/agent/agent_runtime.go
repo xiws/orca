@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"strings"
 
-	event2 "orca/internal/event"
-	"orca/internal/tool"
+	event2 "github.com/xiws/orca/internal/event"
+	"github.com/xiws/orca/internal/tool"
 
-	"orca/internal/handler"
-	"orca/internal/llm"
-	"orca/pkg/command"
-	"orca/pkg/event"
-	"orca/pkg/utils"
+	"github.com/xiws/orca/internal/handler"
+	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/pkg/command"
+	"github.com/xiws/orca/pkg/event"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 // MaxTurns caps how many model turns one task may take. A model that keeps

@@ -1,7 +1,7 @@
 package tool
 
 import (
-	"orca/pkg/utils"
+	"github.com/xiws/orca/pkg/utils"
 )
 
 // Settings mirrors the structure of .orca/setting.json, one field per setting.

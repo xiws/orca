@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"orca/pkg/utils"
+	"github.com/xiws/orca/pkg/utils"
 
-	"orca/pkg/command"
+	"github.com/xiws/orca/pkg/command"
 )
 
 // Names of the built-in tool commands. They are the routing names used by the

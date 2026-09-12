@@ -1,5 +1,5 @@
 {
-  "defaultProvider": "ollama",
-  "defaultModel": "ornith-1.5:9b",
-  "debug": "true"
+  "defaultProvider": "qwen_deepseek",
+  "defaultModel": "qwen3.7-flash-2026-07-15",
+  "debug": "false"
 }

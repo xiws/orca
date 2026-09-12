@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"orca/internal/llm"
-	"orca/internal/tool"
-	"orca/pkg/utils"
+	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/tool"
+	"github.com/xiws/orca/pkg/utils"
 	"time"
 )
 
