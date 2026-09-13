@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/internal/tool"
 	"github.com/xiws/orca/pkg/utils"
@@ -46,6 +47,18 @@ func (s *Session) SetProvider(providerName, modelId string) {
 
 func (s *Session) AppendMessage(role, msg string) {
 	s.Append(llm.ChatMessage{Role: role, Content: msg})
+}
+
+// AppendToolPrompt appends the description of the free-form JSON command
+// protocol to the system context. It is what keeps the tool loop working on
+// providers without native function calling: they never receive tool
+// definitions, so the commands have to travel in the prompt instead. A
+// provider the tools can be declared to natively gets nothing extra.
+func (s *Session) AppendToolPrompt() {
+	if s.Provider.SupportsTools {
+		return
+	}
+	s.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
 }
 
 // Append records a fully built message, filling in the identity fields a caller

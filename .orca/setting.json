@@ -1,5 +1,5 @@
 {
-  "defaultProvider": "qwen_deepseek",
-  "defaultModel": "qwen3.7-flash-2026-07-15",
+  "defaultProvider": "otter",
+  "defaultModel": "deepseek",
   "debug": "false"
 }

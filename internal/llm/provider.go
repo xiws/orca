@@ -13,7 +13,7 @@ var (
 type ModelInfo struct {
 	Provider      string // provider key in models.json, e.g. "ollama"
 	Name          string // provider display name, e.g. "Ollama (Local)"
-	API           string // api type, e.g. "openai-completions"
+	API           string // api type, e.g. "openai-completions" or "otter"
 	BaseURL       string
 	APIKey        string
 	ModelID       string // model id used when calling the api

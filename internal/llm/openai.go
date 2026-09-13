@@ -21,8 +21,9 @@ type openAIClient struct {
 	client *http.Client
 }
 
-// NewOpenAIRequester builds a Requester for the resolved model based on its api type.
-// It falls back to the OpenAI-compatible client for unknown api values.
+// NewOpenAIRequester builds a Requester that talks to an OpenAI-compatible
+// /chat/completions endpoint. NewRequester is the entry point that picks the
+// client for a model's api type.
 func NewOpenAIRequester(info ModelInfo) Requester {
 	return &openAIClient{
 		info:   info,

@@ -1,4 +1,5 @@
 
+BINARY=orca
 
 .PHONY: run
 run:
@@ -10,4 +11,10 @@ build:
 
 .PHONY: publish
 publish: build
-	sudo cp ./orca /usr/local/bin/
+	@echo "📦 安装 $(BINARY) 到 GOPATH/bin..."
+	@cp ./$(BINARY) $(GOPATH)/bin/$(BINARY)
+	@echo "✅ 安装完成: $(GOPATH)/bin/$(BINARY)"
+
+.PHONY: run
+run:
+	go run ./cmd/cli -p otter -m  deepseek "这个项目做了什么"

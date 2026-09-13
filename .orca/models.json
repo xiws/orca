@@ -41,6 +41,30 @@
           "reasoning": false
         }
       ]
+    },
+    "otter": {
+      "name": "Otter (Web)",
+      "api": "otter",
+      "models": [
+        {
+          "id": "deepseek",
+          "name": "DeepSeek (otter)",
+          "contextWindow": 65536,
+          "supportsTools": false
+        },
+        {
+          "id": "chatgpt",
+          "name": "ChatGPT (otter)",
+          "contextWindow": 32768,
+          "supportsTools": false
+        },
+        {
+          "id": "gemini",
+          "name": "Gemini (otter)",
+          "contextWindow": 1048576,
+          "supportsTools": false
+        }
+      ]
     }
   }
 }

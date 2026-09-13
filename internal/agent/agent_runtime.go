@@ -124,6 +124,11 @@ func (r *Runtime) execute(task *Task) (error, string) {
 		r.reportUsage(task, res.Usage)
 
 		calls := llm.EnsureToolCallIDs(res.ToolCalls)
+		if len(calls) == 0 && !task.SessionInfo.Provider.SupportsTools {
+			// The provider cannot call tools natively: the model embeds the
+			// commands in its reply text, and they are lifted out here.
+			calls = llm.EnsureToolCallIDs(ParseTextCalls(res.Content))
+		}
 		task.SessionInfo.AppendAssistant(res.Content, calls)
 		if len(calls) == 0 {
 			return nil, res.Content
@@ -143,7 +148,7 @@ func (r *Runtime) buildRequester(info llm.ModelInfo) llm.Requester {
 	if r.newRequester != nil {
 		return r.newRequester(info)
 	}
-	return llm.NewOpenAIRequester(info)
+	return llm.NewRequester(info)
 }
 
 // reportUsage prints the token consumption of one round when debug is on.
@@ -229,6 +234,7 @@ func (r *Runtime) runSubTasks(parent *Task, result handler.CommandResult) string
 			ProjectPath:   child.SessionInfo.ProjectPath,
 			ContextLength: child.SessionInfo.Provider.ContextWindow,
 		}))
+		child.SessionInfo.AppendToolPrompt()
 		child.SessionInfo.AppendMessage(llm.RoleUser, utils.GetSubtaskPrompt(NewTaskContext(target.Description, target.Title)))
 
 		fmt.Fprintf(&out, "\n--- sub-task %d: %s ---\n", index+1, target.Title)

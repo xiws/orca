@@ -124,3 +124,18 @@ go vet ./...           # 静态检查
 
 - [ ] 会话层的多轮循环：把工具结果回填成下一轮的 prompt。
 - [ ] write / edit 的安全确认策略（哪些路径需要用户批准后才能写）。
+
+## tool 调用定义（`internal/llm/tool_calling.go`）
+
+Orca 有两种让模型调用工具的方式。前面介绍的内置工具走的是 `handler.ToolPrompt` 描述的**自由格式 JSON 协议**；`internal/llm/tool_calling.go` 则将同样的 `read` / `write` / `edit` / `bash` / `create_task` 五类命令，作为 **OpenAI function-calling「工具数组」的定义**重新描述一遍，让支持原生工具的模型能直接调用，而不必经过上面的自由格式协议。
+
+这个文件里每个工具的 `name`、以及其参数 schema，必须与 `internal/handler` 里命令的 json tag（`parseOption` 解析用的字段）保持一致——一旦名称或字段名偏移，模型就会调用出运行时无法逆向解析成选项的命令。
+
+它提供的能力包括：
+
+- **按类型构造 schema**：`StringProperty` / `IntegerProperty` / `BooleanProperty` / `ObjectProperty` / `ArrayProperty`，分别用于描述字符串、整数、布尔、嵌套对象（及其必填项）与数组参数。
+- **`NewTool`**：把 `name`、`description` 与参数 schema 组合成一个 `Tool`。
+- **`ReadTool` / `WriteTool` / `EditTool` / `BashTool` / `CreateTaskTool`**：定义五类内置工具各自的结构与参数。
+- **`Tools`**：按 `handler.Register` 注册的顺序返回全部工具定义。
+
+见 [`internal/llm/tool_calling.go`](./internal/llm/tool_calling.go) 查看工具定义的实现。

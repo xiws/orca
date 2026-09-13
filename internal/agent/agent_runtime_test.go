@@ -241,6 +241,57 @@ func TestExecuteStopsAtTurnLimit(t *testing.T) {
 	}
 }
 
+// TestExecuteFallsBackToTextCommands drives a provider without native function
+// calling: the commands arrive embedded in the reply text and the loop must
+// run them all the same.
+func TestExecuteFallsBackToTextCommands(t *testing.T) {
+	runtime, ws := newTestRuntime(t)
+	seedFile(t, ws, "a.md", "hello\n")
+
+	requester := script(runtime,
+		llm.Result{FinishReason: "stop", Content: "Let me read it.\n" +
+			`{"command":"read","filename":"a.md"}`},
+		llm.Result{FinishReason: "stop", Content: "done"},
+	)
+
+	task := newConversation("read a.md", "read a.md")
+	// A provider without native tool support is what turns the fallback on;
+	// the zero ModelInfo expresses exactly that.
+	task.SessionInfo.Provider = llm.ModelInfo{Provider: "otter", API: "otter", ModelID: "deepseek"}
+	err, result := runtime.RunTask(task)
+	if err != nil {
+		t.Fatalf("RunTask() error = %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("RunTask() result = %q, want %q", result, "done")
+	}
+	if len(requester.seen) != 2 {
+		t.Fatalf("model was called %d times, want 2", len(requester.seen))
+	}
+
+	timeline := task.SessionInfo.Messages
+	want := []string{llm.RoleSystem, llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleAssistant}
+	if got := rolesOf(timeline); !equalStrings(got, want) {
+		t.Fatalf("session roles = %v, want %v", got, want)
+	}
+
+	assistant := timeline[2]
+	if len(assistant.ToolCalls) != 1 || assistant.ToolCalls[0].Name != handler.CommandRead {
+		t.Fatalf("assistant turn = %+v, want the text command lifted into a tool call", assistant)
+	}
+	answer := timeline[3]
+	if answer.Role != llm.RoleTool || answer.ToolCallID != assistant.ToolCalls[0].ID {
+		t.Fatalf("tool message = %+v, want one answering the parsed call", answer)
+	}
+	var payload handler.CommandResult
+	if err := json.Unmarshal([]byte(answer.Content), &payload); err != nil {
+		t.Fatalf("tool content %q is not a CommandResult: %v", answer.Content, err)
+	}
+	if !payload.OK || !strings.Contains(payload.Content, "hello") {
+		t.Errorf("tool payload = %+v, want the read content", payload)
+	}
+}
+
 // TestNewRuntimeRegistersToolCommands asserts the constructor wires a registry
 // that knows every built-in command, scoping file access to the project root.
 func TestNewRuntimeRegistersToolCommands(t *testing.T) {

@@ -59,6 +59,9 @@ func CreateTask(args *CliArgs) (*agent.Task, error) {
 		}
 		task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
 	}
+	// Providers without native function calling receive the command protocol
+	// as part of the system context instead.
+	task.SessionInfo.AppendToolPrompt()
 
 	prompt, err := userPrompt(args)
 	if err != nil {

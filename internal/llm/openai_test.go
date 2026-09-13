@@ -57,7 +57,7 @@ data: [DONE]` + "}"))
 	}))
 	defer server.Close()
 
-	c := &openAIClient{info: ModelInfo{BaseURL: string(server.URL), ModelID: "fake-model"}}
+	c := NewOpenAIRequester(ModelInfo{BaseURL: string(server.URL), ModelID: "fake-model"})
 	_ = c.Request([]ChatMessage{{Role: RoleUser, Content: "hi"}}, nil)
 	if got.method != http.MethodPost {
 		t.Errorf("method = %q, want POST", got.method)
@@ -81,12 +81,12 @@ data: [DONE]`))
 	}))
 	defer server.Close()
 
-	c := &openAIClient{info: ModelInfo{
+	c := NewOpenAIRequester(ModelInfo{
 		API:           "openai-completions",
 		BaseURL:       server.URL,
 		ModelID:       "fake-model",
 		SupportsTools: false,
-	}}
+	})
 	_ = c.Request([]ChatMessage{{Role: RoleUser, Content: "hi"}}, nil)
 	if sawTools {
 		t.Error("request should not declare tools for a model without tool support")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/xiws/orca/internal/handler"
+	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/command"
 	"github.com/xiws/orca/pkg/utils"
 	"strconv"
@@ -266,4 +267,131 @@ func unmarshalField(fields map[string]json.RawMessage, name string, target any) 
 		return fmt.Errorf("%w: %s: %v", ErrMalformedCommand, name, err)
 	}
 	return nil
+}
+
+// ParseTextCalls extracts the commands a model wrote into its reply text,
+// which is how providers without native function calling ask for tools.
+//
+// The scan looks for balanced {..} and [..] values anywhere in the content —
+// prose and code fences around them are ignored — and keeps only objects
+// whose "command" names a known command, or arrays of such objects. Anything
+// else, a JSON example that merely mentions the field included, is skipped.
+// The call arguments are the object without its "command" field, so
+// OptionFromCall rebuilds the envelope exactly as it does for native calls.
+func ParseTextCalls(content string) []llm.ToolCall {
+	var calls []llm.ToolCall
+	for _, span := range jsonSpans(content) {
+		calls = appendSpanCalls(calls, span)
+	}
+	return calls
+}
+
+// jsonSpans returns the balanced {...} and [...] substrings of text. It is a
+// bracket scanner rather than a parser: the caller unmarshals a span to decide
+// whether it is really what it looks for. Brackets inside string literals do
+// not count, so a command may carry arbitrary text in its arguments.
+func jsonSpans(text string) []string {
+	var spans []string
+	for index := 0; index < len(text); index++ {
+		if open := text[index]; open != '{' && open != '[' {
+			continue
+		}
+		end, ok := jsonSpanEnd(text, index)
+		if !ok {
+			continue
+		}
+		spans = append(spans, text[index:end])
+		index = end - 1
+	}
+	return spans
+}
+
+// jsonSpanEnd returns the index just past the value opened at start. Closing
+// brackets must match their openers, so a stray brace cannot glue two
+// neighbouring values into one span.
+func jsonSpanEnd(text string, start int) (int, bool) {
+	var closers []byte
+	inString, escaped := false, false
+	for index := start; index < len(text); index++ {
+		char := text[index]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case char == '\\':
+				escaped = true
+			case char == '"':
+				inString = false
+			}
+			continue
+		}
+		switch char {
+		case '"':
+			inString = true
+		case '{':
+			closers = append(closers, '}')
+		case '[':
+			closers = append(closers, ']')
+		case '}', ']':
+			if len(closers) == 0 || closers[len(closers)-1] != char {
+				return 0, false
+			}
+			closers = closers[:len(closers)-1]
+			if len(closers) == 0 {
+				return index + 1, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// appendSpanCalls keeps the commands of one span. A span is either a single
+// command object or an array of them, the two shapes ToolSchema documents.
+func appendSpanCalls(calls []llm.ToolCall, span string) []llm.ToolCall {
+	trimmed := strings.TrimSpace(span)
+	if strings.HasPrefix(trimmed, "[") {
+		var items []json.RawMessage
+		if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
+			return calls
+		}
+		for _, item := range items {
+			calls = appendCommandCall(calls, item)
+		}
+		return calls
+	}
+	return appendCommandCall(calls, []byte(trimmed))
+}
+
+// appendCommandCall appends the call of one object when it is a command the
+// runtime can run.
+func appendCommandCall(calls []llm.ToolCall, raw []byte) []llm.ToolCall {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return calls
+	}
+	var name string
+	if err := json.Unmarshal(fields["command"], &name); err != nil {
+		return calls
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if !isCommand(name) {
+		return calls
+	}
+
+	delete(fields, "command")
+	arguments, err := json.Marshal(fields)
+	if err != nil {
+		return calls
+	}
+	return append(calls, llm.ToolCall{Name: name, Arguments: string(arguments)})
+}
+
+// isCommand reports whether name is one of the commands the handlers accept.
+func isCommand(name string) bool {
+	for _, known := range handler.Commands() {
+		if name == known {
+			return true
+		}
+	}
+	return false
 }
