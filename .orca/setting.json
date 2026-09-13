@@ -1,5 +1,5 @@
 {
   "defaultProvider": "otter",
-  "defaultModel": "deepseek",
+  "defaultModel": "chatgpt",
   "debug": "false"
 }

@@ -33,3 +33,5 @@ go.work.sum
 internal/agent/.orca
 orca
 .codewhale
+.orca/sessions
+.orca/test.json

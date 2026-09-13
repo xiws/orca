@@ -17,4 +17,4 @@ publish: build
 
 .PHONY: run
 run:
-	go run ./cmd/cli -p otter -m  deepseek "这个项目做了什么"
+	go run ./cmd/cli -p otter -m  gpt "这个项目做了什么"

@@ -9,11 +9,14 @@ import (
 )
 
 type Session struct {
-	Messages    []llm.ChatMessage `json:"messages"`     //messages timeline
-	ProjectPath string            `json:"project_path"` // project path
-	Provider    llm.ModelInfo     `json:"provider"`     // model provider
-	Id          int64             `json:"id"`           // id
-	TotalUsage  llm.Usage         `json:"total_usage"`  // 累计 token 消耗
+	Messages    []llm.ChatMessage `json:"messages"`              //messages timeline
+	ProjectPath string            `json:"project_path"`          // project path
+	Provider    llm.ModelInfo     `json:"provider"`              // model provider
+	Id          int64             `json:"id"`                    // id
+	TotalUsage  llm.Usage         `json:"total_usage"`           // 累计 token 消耗
+	CreateTime  int64             `json:"create_time"`           // 首次创建时间
+	UpdateTime  int64             `json:"update_time"`           // 最后更新时间
+	OtterState  *llm.OtterState   `json:"otter_state,omitempty"` // otter 平台状态
 }
 
 func NewSession() *Session {
@@ -21,11 +24,14 @@ func NewSession() *Session {
 	providerName := tool.Get(tool.KeyDefaultProvider)
 	modelId := tool.Get(tool.KeyDefaultModel)
 	var defaultProvider = llm.GetProvider(providerName, modelId)
+	now := time.Now().Unix()
 	return &Session{
 		Messages:    prompts,
 		Id:          utils.GetSnowFlakeId(),
 		ProjectPath: utils.GetCurrentPath(),
 		Provider:    defaultProvider,
+		CreateTime:  now,
+		UpdateTime:  now,
 	}
 }
 
@@ -63,6 +69,7 @@ func (s *Session) AppendToolPrompt() {
 
 // Append records a fully built message, filling in the identity fields a caller
 // left zero so every entry of the timeline is identifiable on its own.
+// It also updates the session's UpdateTime to reflect the latest activity.
 func (s *Session) Append(message llm.ChatMessage) {
 	if message.Id == 0 {
 		message.Id = utils.GetSnowFlakeId()
@@ -71,6 +78,7 @@ func (s *Session) Append(message llm.ChatMessage) {
 		message.CreateTime = time.Now().Unix()
 	}
 	s.Messages = append(s.Messages, message)
+	s.UpdateTime = time.Now().Unix()
 }
 
 // AppendAssistant records one model reply, tool calls included.
@@ -115,4 +123,18 @@ func (s *Session) AddUsage(usage llm.Usage) {
 	s.TotalUsage.PromptTokens += usage.PromptTokens
 	s.TotalUsage.CompletionTokens += usage.CompletionTokens
 	s.TotalUsage.TotalTokens += usage.TotalTokens
+}
+
+// GetOtterState returns the saved otter platform state, or a zero value
+// when no state has been recorded yet.
+func (s *Session) GetOtterState() llm.OtterState {
+	if s.OtterState != nil {
+		return *s.OtterState
+	}
+	return llm.OtterState{}
+}
+
+// SetOtterState persists the otter platform state into the session.
+func (s *Session) SetOtterState(state llm.OtterState) {
+	s.OtterState = &state
 }

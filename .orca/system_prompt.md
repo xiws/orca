@@ -27,6 +27,11 @@
 - **适用场景**: 开始任务前先 `read` 相关文件，理解现有代码结构和约定。
 - **注意**: 不存在的文件返回错误，重试即可。
 
+示例：
+```json
+{ "command": "read",  "id": 1, "filename": "/abs/or/relative/path", "start": 1, "end": 200 }
+```
+  
 ### 2. `write`
 创建新文件或**完全覆盖**已有文件。父目录不存在会自动创建。
 
@@ -34,6 +39,10 @@
 - **写入方式**: 原子写入（先写临时文件再 rename），不会产生残缺文件。
 - **适用场景**: 创建新文件、完全重写一个文件。
 - **注意**: `write` 会**丢弃文件中所有不在 `content` 中的内容**。修改已有文件时优先用 `edit`。
+
+```json
+{ "command": "write", "id": 2, "data": { "filename": "/abs/or/relative/path", "content": "full new file" } }
+```
 
 ### 3. `edit`
 对已有文件做**精准修改**。基于 unified diff 内容匹配，容忍行号不精确和上下文近似。
@@ -44,6 +53,13 @@
 - **适用场景**: 修改已有文件中的部分内容（替换、增加、删除代码段）。
 - **多条修改**: 多个 fragment 按顺序依次应用，后一个 fragment 作用在前一个的输出上。只有所有 fragment 都匹配成功才会写入文件。
 - **注意**: 如果 diff 内容与文件实际内容差异过大导致匹配失败，请先 `read` 确认最新内容再重试。
+
+```json
+{ "command": "edit",  "id": 3, "data": { "filename": "/abs/or/relative/path", "contents": [
+    { "diff": "@@\n- old line\n+ new line" },
+    { "diff": "@@\n- another old line\n+ another new line" }
+] } }
+```
 
 ### 4. `bash`
 在 shell 中执行命令，stdout 和 stderr 合并返回。
@@ -61,6 +77,9 @@
 - **开始任务前**: 运行 `go build ./...` 或 `go vet ./...` 等命令检查当前代码是否健康。
 - **修改后**: 运行 `go test ./...` 确保不破坏现有功能。
 
+```json
+{ "command": "bash",  "id": 4, "data": { "content": "ls -a", "workdir": "relative/or/absolute/dir", "timeout": 60 } }
+```
 ### 5. `create_task`
 将复杂目标分解为多个独立子任务，逐一运行并汇总结果。
 

@@ -76,6 +76,17 @@ type otterMeta struct {
 	tokenUsage         int
 }
 
+// OtterState captures the platform-side conversation state an otterRequester
+// holds. It is persisted in the orca session so a resumed process picks up
+// the same remote session instead of creating a new one.
+type OtterState struct {
+	ChatSessionID      string            `json:"chat_session_id,omitempty"`
+	ParentMessageID    int               `json:"parent_message_id,omitempty"`
+	ParentMessageIDStr string            `json:"parent_message_id_str,omitempty"`
+	RemoteMetadata     map[string]string `json:"remote_metadata,omitempty"`
+	Delivered          int               `json:"delivered"`
+}
+
 // apply merges one event of the reply into the meta. Missing fields keep their
 // previous value, since a platform may report them only once.
 func (m *otterMeta) apply(event provider.StreamEvent) {
@@ -272,6 +283,27 @@ func (o *otterRequester) ensureRemoteSession() error {
 	}
 	o.chatSessionID = chatSessionID
 	return nil
+}
+
+// State returns a snapshot of the current platform state for persistence.
+func (o *otterRequester) State() OtterState {
+	return OtterState{
+		ChatSessionID:      o.chatSessionID,
+		ParentMessageID:    o.parentMessageID,
+		ParentMessageIDStr: o.parentMessageIDStr,
+		RemoteMetadata:     o.remoteMetadata,
+		Delivered:          o.delivered,
+	}
+}
+
+// RestoreState rehydrates the requester from a previously saved state,
+// so a resumed process continues the same platform conversation.
+func (o *otterRequester) RestoreState(s OtterState) {
+	o.chatSessionID = s.ChatSessionID
+	o.parentMessageID = s.ParentMessageID
+	o.parentMessageIDStr = s.ParentMessageIDStr
+	o.remoteMetadata = s.RemoteMetadata
+	o.delivered = s.Delivered
 }
 
 // commit records what the finished reply reported: the ids the next follow-up

@@ -7,6 +7,7 @@ import (
 
 	"github.com/xiws/orca/internal/agent"
 	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/session"
 	"github.com/xiws/orca/pkg/utils"
 )
 
@@ -17,8 +18,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Handle subcommands first
+	if args.SubCommand == "session" {
+		if err := HandleSessionCommand(args.SubArgs); err != nil {
+			fmt.Fprintln(os.Stderr, "orca:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	runtime := agent.NewRuntime()
-	task, err := CreateTask(args)
+
+	var task *agent.Task
+	if args.SessionId > 0 {
+		// Resume existing session
+		task, err = ResumeTask(args)
+	} else {
+		// Create new session
+		task, err = CreateTask(args)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "orca:", err)
 		os.Exit(1)
@@ -30,6 +48,11 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println(result)
+
+	// Save session after successful execution
+	if err := session.Save(task.SessionInfo); err != nil {
+		fmt.Fprintf(os.Stderr, "orca: warning: failed to save session: %v\n", err)
+	}
 }
 
 // CreateTask builds the conversation handed to the runtime: one system message
@@ -57,11 +80,16 @@ func CreateTask(args *CliArgs) (*agent.Task, error) {
 			ProjectPath:   utils.GetCurrentPath(),
 			ContextLength: task.SessionInfo.Provider.ContextWindow,
 		}
-		task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
+
+		if task.SessionInfo.Provider.API != "otter" {
+			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
+			// Providers without native function calling receive the command protocol
+			// as part of the system context instead
+			task.SessionInfo.AppendToolPrompt()
+		} else {
+			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetOtterSystemPrompt(data))
+		}
 	}
-	// Providers without native function calling receive the command protocol
-	// as part of the system context instead.
-	task.SessionInfo.AppendToolPrompt()
 
 	prompt, err := userPrompt(args)
 	if err != nil {
@@ -85,4 +113,35 @@ func userPrompt(args *CliArgs) (string, error) {
 	}
 	builder.WriteString(args.Prompt)
 	return builder.String(), nil
+}
+
+// ResumeTask loads an existing session and prepares a task to continue the conversation.
+// It appends the new user message to the existing session history.
+func ResumeTask(args *CliArgs) (*agent.Task, error) {
+	// Load the existing session
+	sess, err := session.Load(args.SessionId)
+	if err != nil {
+		return nil, fmt.Errorf("load session %d: %w", args.SessionId, err)
+	}
+
+	// Create a task with the loaded session
+	task := &agent.Task{
+		Id:          utils.GetSnowFlakeId(),
+		SessionInfo: sess,
+		TaskTarget:  args.Prompt,
+	}
+
+	// Allow overriding provider if specified
+	if args.Model != "" && args.Provider != "" {
+		task.SessionInfo.SetProvider(args.Provider, args.Model)
+	}
+
+	// Append the new user message
+	prompt, err := userPrompt(args)
+	if err != nil {
+		return nil, err
+	}
+	task.SessionInfo.AppendMessage(llm.RoleUser, prompt)
+
+	return task, nil
 }

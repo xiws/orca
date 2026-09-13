@@ -114,6 +114,11 @@ func (r *Runtime) ExecuteCommand(opt command.CommandOption) (error, any) {
 func (r *Runtime) execute(task *Task) (error, string) {
 	var requester = r.buildRequester(task.SessionInfo.GetProvider())
 
+	// Restore otter platform state if the requester supports it and the
+	// session carries a previously saved state. This lets a resumed process
+	// continue the same remote conversation instead of creating a new one.
+	restoreOtterState(requester, task.SessionInfo)
+
 	for turn := 0; turn < MaxTurns; turn++ {
 		var res = requester.Request(task.SessionInfo.GetMessages(), nil)
 		if res.Error != nil {
@@ -122,6 +127,10 @@ func (r *Runtime) execute(task *Task) (error, string) {
 
 		task.SessionInfo.AddUsage(res.Usage)
 		r.reportUsage(task, res.Usage)
+
+		// Capture otter platform state after each successful request so a
+		// crash or resume picks up where the conversation left off.
+		captureOtterState(requester, task.SessionInfo)
 
 		calls := llm.EnsureToolCallIDs(res.ToolCalls)
 		if len(calls) == 0 && !task.SessionInfo.Provider.SupportsTools {
@@ -140,6 +149,33 @@ func (r *Runtime) execute(task *Task) (error, string) {
 	}
 
 	return ErrMaxTurns, ""
+}
+
+// restoreOtterState rehydrates the requester from the session's saved otter
+// state, if the requester supports it and the session carries one.
+func restoreOtterState(requester llm.Requester, session *Session) {
+	type stateRestorer interface {
+		RestoreState(llm.OtterState)
+	}
+	restore, ok := requester.(stateRestorer)
+	if !ok {
+		return
+	}
+	state := session.GetOtterState()
+	if state.ChatSessionID != "" || state.Delivered > 0 {
+		restore.RestoreState(state)
+	}
+}
+
+// captureOtterState snapshots the requester's otter platform state into the
+// session, if the requester supports it.
+func captureOtterState(requester llm.Requester, session *Session) {
+	type stateCapture interface {
+		State() llm.OtterState
+	}
+	if capture, ok := requester.(stateCapture); ok {
+		session.SetOtterState(capture.State())
+	}
 }
 
 // buildRequester returns the client for info, honouring the factory a test
