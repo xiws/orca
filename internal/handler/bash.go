@@ -16,37 +16,33 @@ import (
 )
 
 const (
-	// DefaultBashTimeout is how many seconds a bash command may run when it does
-	// not ask for a different limit.
+	// DefaultBashTimeout 是 bash 命令在未指定其他限制时的运行秒数。
 	DefaultBashTimeout = 60
-	// MaxBashOutput caps how many output bytes a bash command keeps, so a noisy
-	// command cannot flood the next prompt.
+	// MaxBashOutput 限制 bash 命令保留的输出字节数，防止嘈杂的命令淹没下一个提示。
 	MaxBashOutput = 32 << 10
-	// killGrace is how long bashHandler waits for the output pipes to drain after
-	// the process has been killed.
+	// killGrace 是 bashHandler 在进程被杀死后等待输出管道排空的时间。
 	killGrace = 5 * time.Second
 )
 
-// BashHandler serves the bash command.
+// BashHandler 服务 bash 命令。
 type BashHandler struct {
 	Workspace
 }
 
-// Handle runs a command line in a shell, returning its merged output. A non
-// zero exit status or a timeout fails the result but still reports whatever the
-// command managed to print.
+// Handle 在 shell 中运行命令行，返回其合并输出。
+// 非零退出状态或超时会失败结果，但仍会报告命令已打印的内容。
 func (t BashHandler) Handle(cmd command.CommandOption) (error, any) {
 	opt, ok := cmd.(*BashOption)
 	if !ok {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandBash), nil
 	}
 
-	// Publish before-event with the command itself as meta.
+	// 发布 before-event，命令本身作为 meta。
 	publish(t.Publisher, event.NewToolBeforeEvent("bash", "", opt.Content, opt.Reasoning, opt.Id))
 
 	output, exitCode, err := t.run(opt)
 
-	// After-event: summary carries the original command, exitCode for bash-specific rendering.
+	// After-event：摘要携带原始命令，exitCode 用于 bash 特定渲染。
 	publish(t.Publisher, event.NewToolAfterEvent("bash", "", output, err == nil, opt.Content, exitCode, opt.Id))
 
 	return nil, ResultFor(opt, output, err)
@@ -104,8 +100,8 @@ func (t BashHandler) run(opt *BashOption) (string, int, error) {
 	return report, 0, nil
 }
 
-// workdir resolves the directory the command runs in, defaulting to the root of
-// the workspace. It stays subject to the containment rules of the workspace.
+// workdir 解析命令运行的目录，默认为工作区根目录。
+// 它仍受工作区的包含规则约束。
 func (t BashHandler) workdir(dir string) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return t.root()
@@ -113,7 +109,7 @@ func (t BashHandler) workdir(dir string) (string, error) {
 	return t.Resolve(dir)
 }
 
-// shellCommand picks the platform shell used to interpret a command line.
+// shellCommand 选择用于解释命令行的平台 shell。
 func shellCommand(line string) (string, []string) {
 	if runtime.GOOS == "windows" {
 		return "cmd", []string{"/c", line}
@@ -125,8 +121,8 @@ func shellCommand(line string) (string, []string) {
 	return shell, []string{"-c", line}
 }
 
-// cappedWriter collects output up to limit bytes and counts everything beyond
-// it, so callers can tell the model that output was dropped.
+// cappedWriter 收集最多 limit 字节的输出，并统计超出的部分，
+// 以便调用方可以告诉模型输出被截断了。
 type cappedWriter struct {
 	buf     bytes.Buffer
 	limit   int

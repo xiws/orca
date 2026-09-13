@@ -8,8 +8,8 @@ import (
 	"github.com/xiws/orca/pkg/utils"
 )
 
-// testCommand is a CommandOption the registry can route; the name is a constant,
-// so even a zero value resolves, and the id correlates a call with its result.
+// testCommand 是注册表可路由的 CommandOption；名称是固定的，
+// 因此零值也可解析，id 将调用与其结果关联。
 type testCommand struct {
 	Id int64
 }
@@ -21,7 +21,7 @@ func newTestCommand() testCommand {
 	return testCommand{Id: utils.GetSnowFlakeId()}
 }
 
-// missingCommand is never registered, so dispatching it must fail.
+// missingCommand 从未注册，分发它必须失败。
 type missingCommand struct {
 	Id int64
 }

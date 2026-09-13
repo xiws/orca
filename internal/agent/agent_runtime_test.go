@@ -15,8 +15,8 @@ import (
 	"github.com/xiws/orca/pkg/utils"
 )
 
-// scriptedRequester replays a fixed list of model replies and records every
-// conversation it is handed, so the loop can be driven without a real model.
+// scriptedRequester 按顺序回放固定的模型回复列表，并记录每次
+// 对话，以便在没有真实模型的情况下驱动循环。
 type scriptedRequester struct {
 	replies []llm.Result
 	seen    [][]llm.ChatMessage
@@ -32,8 +32,8 @@ func (s *scriptedRequester) Request(prompts []llm.ChatMessage, _ chan<- string) 
 	return reply
 }
 
-// newTestRuntime returns a runtime whose command registry is scoped to a
-// temporary workspace, so file commands never touch the real project tree.
+// newTestRuntime 返回命令注册表限定在临时工作区的运行时，
+// 因此文件命令不会触及真实项目树。
 func newTestRuntime(t *testing.T) (*Runtime, handler.Workspace) {
 	t.Helper()
 	root := t.TempDir()
@@ -48,14 +48,14 @@ func newTestRuntime(t *testing.T) (*Runtime, handler.Workspace) {
 	return &Runtime{commands: handle, bus: bus, workspace: workspace}, workspace
 }
 
-// script installs a requester that replays replies in order.
+// script 安装一个按顺序回放回复的 requester。
 func script(runtime *Runtime, replies ...llm.Result) *scriptedRequester {
 	requester := &scriptedRequester{replies: replies}
 	runtime.newRequester = func(llm.ModelInfo) llm.Requester { return requester }
 	return requester
 }
 
-// seedFile writes content into the workspace root.
+// seedFile 将 content 写入工作区根目录。
 func seedFile(t *testing.T, ws handler.Workspace, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(ws.Root, name), []byte(content), 0o644); err != nil {
@@ -63,8 +63,7 @@ func seedFile(t *testing.T, ws handler.Workspace, name, content string) {
 	}
 }
 
-// newConversation returns a task with the system and user turns a real run
-// starts from.
+// newConversation 返回包含真实运行起始的系统和用户轮次的任务。
 func newConversation(target, userTurn string) *Task {
 	task := NewTask(target, "")
 	task.SessionInfo.AppendMessage(llm.RoleSystem, "You are a coding agent.")
@@ -72,8 +71,7 @@ func newConversation(target, userTurn string) *Task {
 	return task
 }
 
-// rolesOf lists the role of every message, which is what the protocol is
-// actually about.
+// rolesOf 列出每条消息的角色，这是协议实际关注的内容。
 func rolesOf(messages []llm.ChatMessage) []string {
 	roles := make([]string, 0, len(messages))
 	for _, message := range messages {
@@ -82,10 +80,10 @@ func rolesOf(messages []llm.ChatMessage) []string {
 	return roles
 }
 
-// TestExecuteKeepsToolProtocolOrder drives one tool round and checks the
-// conversation reads back the way the OpenAI protocol demands: the assistant
-// turn carrying the tool call, then the tool message answering it by id, then
-// the model's answer — and that the second request is given all of it.
+// TestExecuteKeepsToolProtocolOrder 驱动一轮工具调用并检查
+// 对话是否按 OpenAI 协议要求的方式读取：携带工具调用的助手轮次，
+// 然后通过 id 回复的工具消息，然后是模型的回答——
+// 并且第二次请求能看到所有这些。
 func TestExecuteKeepsToolProtocolOrder(t *testing.T) {
 	runtime, ws := newTestRuntime(t)
 	seedFile(t, ws, "a.md", "hello\n")
@@ -106,7 +104,7 @@ func TestExecuteKeepsToolProtocolOrder(t *testing.T) {
 		t.Fatalf("RunTask() result = %q, want %q", result, "done")
 	}
 
-	// The timeline: system, user, assistant(call), tool(answer), assistant(done).
+	// 时间线：system、user、assistant(call)、tool(answer)、assistant(done)。
 	messages := task.SessionInfo.Messages
 	want := []string{llm.RoleSystem, llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleAssistant}
 	if got := rolesOf(messages); !equalStrings(got, want) {
@@ -133,8 +131,8 @@ func TestExecuteKeepsToolProtocolOrder(t *testing.T) {
 		t.Errorf("tool payload = %+v, want the read content", payload)
 	}
 
-	// The second request has to see the assistant turn and its answer; without
-	// them the model would not know what it had already done.
+	// 第二次请求必须看到助手轮次及其回复；否则
+	// 模型将不知道它已经做了什么。
 	if len(requester.seen) != 2 {
 		t.Fatalf("model was called %d times, want 2", len(requester.seen))
 	}
@@ -148,9 +146,8 @@ func TestExecuteKeepsToolProtocolOrder(t *testing.T) {
 	}
 }
 
-// TestExecuteAnswersFailedToolCall checks that a tool which cannot run is still
-// answered. A read of a path that does not exist is a business failure the
-// model must be able to read and recover from, not a fatal error.
+// TestExecuteAnswersFailedToolCall 检查无法运行的工具仍然会被回复。
+// 读取不存在的路径是业务失败，模型必须能读取并恢复，而不是致命错误。
 func TestExecuteAnswersFailedToolCall(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 
@@ -189,9 +186,8 @@ func TestExecuteAnswersFailedToolCall(t *testing.T) {
 	}
 }
 
-// TestExecuteCommandAnswersUnknownTool covers a call no handler is registered
-// for: it cannot run, but it must still be answered so the assistant turn is
-// never left without its tool message.
+// TestExecuteCommandAnswersUnknownTool 覆盖没有注册处理器的调用：
+// 它无法运行，但必须被回复，以确保助手轮次不会缺少工具消息。
 func TestExecuteCommandAnswersUnknownTool(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 	task := newConversation("teleport", "teleport")
@@ -220,8 +216,7 @@ func TestExecuteCommandAnswersUnknownTool(t *testing.T) {
 	}
 }
 
-// TestExecuteStopsAtTurnLimit makes sure a model that keeps asking for tools
-// cannot spin forever.
+// TestExecuteStopsAtTurnLimit 确保不断请求工具的模型不会无限循环。
 func TestExecuteStopsAtTurnLimit(t *testing.T) {
 	runtime, ws := newTestRuntime(t)
 	seedFile(t, ws, "a.md", "hello\n")
@@ -241,9 +236,8 @@ func TestExecuteStopsAtTurnLimit(t *testing.T) {
 	}
 }
 
-// TestExecuteFallsBackToTextCommands drives a provider without native function
-// calling: the commands arrive embedded in the reply text and the loop must
-// run them all the same.
+// TestExecuteFallsBackToTextCommands 驱动没有原生函数调用的 Provider：
+// 命令嵌入在回复文本中，循环仍然必须运行它们。
 func TestExecuteFallsBackToTextCommands(t *testing.T) {
 	runtime, ws := newTestRuntime(t)
 	seedFile(t, ws, "a.md", "hello\n")
@@ -255,8 +249,8 @@ func TestExecuteFallsBackToTextCommands(t *testing.T) {
 	)
 
 	task := newConversation("read a.md", "read a.md")
-	// A provider without native tool support is what turns the fallback on;
-	// the zero ModelInfo expresses exactly that.
+	// 不支持原生工具支持的 Provider 正是开启回退的条件；
+	// 零 ModelInfo 恰好表达了这一点。
 	task.SessionInfo.Provider = llm.ModelInfo{Provider: "otter", API: "otter", ModelID: "deepseek"}
 	err, result := runtime.RunTask(task)
 	if err != nil {
@@ -292,17 +286,16 @@ func TestExecuteFallsBackToTextCommands(t *testing.T) {
 	}
 }
 
-// TestNewRuntimeRegistersToolCommands asserts the constructor wires a registry
-// that knows every built-in command, scoping file access to the project root.
+// TestNewRuntimeRegistersToolCommands 断言构造函数连接了
+// 知道每个内置命令的注册表，将文件访问限定在项目根目录。
 func TestNewRuntimeRegistersToolCommands(t *testing.T) {
 	runtime := NewRuntime()
 	if runtime.commands == nil {
 		t.Fatal("NewRuntime() built a runtime with no command registry")
 	}
 	for _, name := range handler.Commands() {
-		// An empty payload keeps each handler from touching the file system: the
-		// command is dispatched and fails as a business result rather than with
-		// ErrCommandNotFound, which is exactly what proves it is registered.
+		// 空负载让每个处理器不触及文件系统：命令被分发并
+		// 以业务结果失败而非 ErrCommandNotFound，这正好证明它已注册。
 		opt, err := OptionFromCall(1, name, `{}`)
 		if err != nil {
 			t.Fatalf("OptionFromCall(%q) error = %v", name, err)
@@ -313,15 +306,14 @@ func TestNewRuntimeRegistersToolCommands(t *testing.T) {
 	}
 }
 
-// TestRunTaskSurfacesModelFailure exercises RunTask's delegation to the model
-// turn. An unresolved provider yields an empty ModelInfo, so the request is
-// built against an invalid endpoint and fails at the HTTP client without any
-// network round trip; RunTask must surface that error and return no message.
+// TestRunTaskSurfacesModelFailure 测试 RunTask 对模型轮次的委托。
+// 未解析的 Provider 产生空的 ModelInfo，因此请求针对无效端点，
+// 在 HTTP 客户端处失败而无网络往返；RunTask 必须暴露该错误且不返回消息。
 func TestRunTaskSurfacesModelFailure(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 	task := newConversation("no provider configured", "no provider configured")
-	// An explicit zero provider keeps the request off the model configured in
-	// .orca/setting.json; without it this test would really call ollama.
+	// 显式的零 Provider 避免使用 .orca/setting.json 中配置的模型；
+	// 否则这个测试会真的调用 ollama。
 	task.SessionInfo.Provider = llm.ModelInfo{}
 
 	err, msg := runtime.RunTask(task)
@@ -333,9 +325,8 @@ func TestRunTaskSurfacesModelFailure(t *testing.T) {
 	}
 }
 
-// TestRunTaskLiveAgent and TestSubRunTaskLiveAgent talk to the model configured
-// in .orca/setting.json. They are skipped in short mode because they need a
-// reachable endpoint.
+// TestRunTaskLiveAgent 和 TestSubRunTaskLiveAgent 与 .orca/setting.json
+// 中配置的模型对话。它们在 short 模式下跳过，因为需要可达的端点。
 func TestRunTaskLiveAgent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live model request in short mode")
@@ -379,7 +370,7 @@ func TestSubRunTaskLiveAgent(t *testing.T) {
 	t.Logf("%s", msg)
 }
 
-// equalStrings compares two role lists.
+// equalStrings 比较两个角色列表。
 func equalStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false

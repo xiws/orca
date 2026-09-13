@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,11 +15,15 @@ import (
 func main() {
 	args, err := ParseArgs()
 	if err != nil {
+		// 帮助信息已由 ParseArgs 自身打印。
+		if errors.Is(err, ErrHelpRequested) {
+			return
+		}
 		fmt.Fprintln(os.Stderr, "orca:", err)
 		os.Exit(1)
 	}
 
-	// Handle subcommands first
+	// 优先处理子命令
 	if args.SubCommand == "session" {
 		if err := HandleSessionCommand(args.SubArgs); err != nil {
 			fmt.Fprintln(os.Stderr, "orca:", err)
@@ -31,10 +36,10 @@ func main() {
 
 	var task *agent.Task
 	if args.SessionId > 0 {
-		// Resume existing session
+		// 恢复已有会话
 		task, err = ResumeTask(args)
 	} else {
-		// Create new session
+		// 创建新会话
 		task, err = CreateTask(args)
 	}
 	if err != nil {
@@ -49,20 +54,21 @@ func main() {
 	}
 	fmt.Println(result)
 
-	// Save session after successful execution
+	// 成功执行后保存会话
 	if err := session.Save(task.SessionInfo); err != nil {
 		fmt.Fprintf(os.Stderr, "orca: warning: failed to save session: %v\n", err)
 	}
 }
 
-// CreateTask builds the conversation handed to the runtime: one system message
-// describing the rules the model works under, then one user message carrying the
-// attached files and the request itself.
+// CreateTask 构建交给运行时的对话：一条系统消息描述模型工作的规则，
+// 然后一条用户消息携带附加文件和请求本身。
 //
-// Attached files travel inside the user turn. They used to be appended as tool
-// messages, which no server can accept: a tool message must answer a tool call
-// made by the assistant message before it, and there is none at the start of a
-// conversation.
+// 附加文件在用户消息中传递。它们曾经作为工具消息附加，
+// 但没有服务器能接受这种方式：工具消息必须回复之前助手消息发出的工具调用，
+// 而对话开始时并没有这样的调用。
+//
+// 不支持原生函数调用的 Provider 会在系统上下文中
+// 接收命令协议描述。
 func CreateTask(args *CliArgs) (*agent.Task, error) {
 	var task = agent.NewTask(args.Prompt, "")
 	if args.Model != "" && args.Provider != "" {
@@ -83,8 +89,8 @@ func CreateTask(args *CliArgs) (*agent.Task, error) {
 
 		if task.SessionInfo.Provider.API != "otter" {
 			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
-			// Providers without native function calling receive the command protocol
-			// as part of the system context instead
+			// 不支持原生函数调用的 Provider 会在系统上下文中
+			// 接收命令协议描述
 			task.SessionInfo.AppendToolPrompt()
 		} else {
 			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetOtterSystemPrompt(data))
@@ -99,8 +105,8 @@ func CreateTask(args *CliArgs) (*agent.Task, error) {
 	return task, nil
 }
 
-// userPrompt renders the user turn: every attached file wrapped in a <file>
-// element, followed by the request itself.
+// userPrompt 渲染用户消息：每个附加文件包裹在 <file>
+// 元素中，后面跟着请求本身。
 func userPrompt(args *CliArgs) (string, error) {
 	var builder strings.Builder
 	for _, file := range args.Files {
@@ -115,28 +121,28 @@ func userPrompt(args *CliArgs) (string, error) {
 	return builder.String(), nil
 }
 
-// ResumeTask loads an existing session and prepares a task to continue the conversation.
-// It appends the new user message to the existing session history.
+// ResumeTask 加载已有会话并准备任务以继续对话。
+// 它将新的用户消息追加到已有会话历史中。
 func ResumeTask(args *CliArgs) (*agent.Task, error) {
-	// Load the existing session
+	// 加载已有会话
 	sess, err := session.Load(args.SessionId)
 	if err != nil {
 		return nil, fmt.Errorf("load session %d: %w", args.SessionId, err)
 	}
 
-	// Create a task with the loaded session
+	// 使用已加载的会话创建任务
 	task := &agent.Task{
 		Id:          utils.GetSnowFlakeId(),
 		SessionInfo: sess,
 		TaskTarget:  args.Prompt,
 	}
 
-	// Allow overriding provider if specified
+	// 如果指定了 provider 则允许覆盖
 	if args.Model != "" && args.Provider != "" {
 		task.SessionInfo.SetProvider(args.Provider, args.Model)
 	}
 
-	// Append the new user message
+	// 追加新的用户消息
 	prompt, err := userPrompt(args)
 	if err != nil {
 		return nil, err

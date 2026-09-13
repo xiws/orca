@@ -61,7 +61,7 @@ func TestReadHandlerTruncatesLongFiles(t *testing.T) {
 	if !first.OK {
 		t.Fatalf("read result = %+v", first)
 	}
-	// One numbered line per source line, plus the note telling how to continue.
+	// 每个源行对应一个编号行，加上提示如何继续的说明。
 	page := splitLines(first.Content)
 	if len(page) != MaxReadLines+1 {
 		t.Fatalf("read returned %d lines, want %d numbered lines plus a note", len(page), MaxReadLines)
@@ -131,7 +131,7 @@ func TestReadHandlerSymlinkOutsideWorkspace(t *testing.T) {
 	}
 }
 
-// numberedLines builds a file with count lines, each labelled with its number.
+// numberedLines 构建一个 count 行的文件，每行标记其编号。
 func numberedLines(count int) string {
 	var out strings.Builder
 	for i := 1; i <= count; i++ {
@@ -140,7 +140,7 @@ func numberedLines(count int) string {
 	return out.String()
 }
 
-// tail returns the last line of a multi line payload.
+// tail 返回多行载荷的最后一行。
 func tail(content string) string {
 	parts := splitLines(content)
 	if len(parts) == 0 {

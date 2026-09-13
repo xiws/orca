@@ -66,7 +66,7 @@ func TestEditHandlerWithAmbiguousContext(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "test.md", "dup\ndup\n")
 
-	// hunkpatch applies a no-context diff to the first matching occurrence.
+	// hunkpatch 将无上下文 diff 应用到第一个匹配的出现。
 	first := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
 		{Diff: "@@\n- dup\n+ single\n"},
 	}))
@@ -77,7 +77,7 @@ func TestEditHandlerWithAmbiguousContext(t *testing.T) {
 		t.Fatalf("file content = %q, want the first occurrence replaced", got)
 	}
 
-	// A diff with context behind the change targets the second occurrence uniquely.
+	// 变更后方有上下文的 diff 唯一地定位第二个出现。
 	second := handleOne(t, handle, NewEditOption(2, "test.md", []EditFragment{
 		{Diff: "@@\n dup\n- dup\n+ single2\n"},
 	}))
@@ -161,9 +161,8 @@ func TestEditHandlerIsANoOpWhenNothingChanges(t *testing.T) {
 	path := seed(t, ws, "test.md", sampleFile)
 	before := statModified(t, path)
 
-	// A diff whose old and new are identical — hunkpatch treats this as a hunk
-	// that left the text unchanged, which we report as an error since the model
-	// should not have sent it.
+	// 新旧内容相同的 diff——hunkpatch 将其视为文本未变的 hunk，
+	// 我们报告为错误，因为模型不应发送这种 diff。
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
 		{Diff: "@@\n line one\n- line two\n+ line two\n line three\n"},
 	}))
@@ -179,8 +178,8 @@ func TestEditHandlerConvertsCRLFToLF(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "win.md", "one\r\ntwo\r\nthree\r\n")
 
-	// hunkpatch internally strips \r from lines, so CRLF content becomes LF.
-	// Context before the change is required for CRLF sources.
+	// hunkpatch 内部会从行中剥离 \r，因此 CRLF 内容变为 LF。
+	// CRLF 源文件需要变更前的上下文。
 	diffEdit := handleOne(t, handle, NewEditOption(1, "win.md", []EditFragment{
 		{Diff: "@@\n one\n- one\n- two\n+ ONE\n+ TWO\n"},
 	}))
@@ -196,8 +195,8 @@ func TestEditHandlerHunkpatchAddsTrailingNewline(t *testing.T) {
 	ws, handle := newWorkspace(t)
 	seed(t, ws, "test.md", "one\ntwo")
 
-	// hunkpatch internally normalizes lines and adds a trailing newline
-	// even when the source file didn't have one.
+	// hunkpatch 内部规范化行并添加尾部换行符，
+	// 即使源文件没有。
 	result := handleOne(t, handle, NewEditOption(1, "test.md", []EditFragment{
 		{Diff: "@@\n- one\n+ ONE\n two\n"},
 	}))
@@ -209,8 +208,7 @@ func TestEditHandlerHunkpatchAddsTrailingNewline(t *testing.T) {
 	}
 }
 
-// statModified returns the modification time of a file, which rewriting it
-// would move forward.
+// statModified 返回文件的修改时间，重写文件会使其前进。
 func statModified(t *testing.T, path string) time.Time {
 	t.Helper()
 	info, err := os.Stat(path)

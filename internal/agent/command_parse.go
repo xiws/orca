@@ -14,26 +14,24 @@ import (
 )
 
 var (
-	// ErrUnknownCommand is returned for a command name no handler is registered
-	// for.
+	// ErrUnknownCommand 在没有注册对应处理器的命令名时返回。
 	ErrUnknownCommand = errors.New("unknown command")
-	// ErrMalformedCommand is returned when a command object cannot be decoded.
+	// ErrMalformedCommand 在命令对象无法解码时返回。
 	ErrMalformedCommand = errors.New("malformed command")
-	// ErrEmptyPayload is returned when there is nothing to parse.
+	// ErrEmptyPayload 在没有可解析内容时返回。
 	ErrEmptyPayload = errors.New("no command to parse")
 )
 
-// Parse decodes one command object into the option of its handler.
+// Parse 将一个命令对象解码为其处理器的 option。
 //
-// Parameters may sit next to "command" or be wrapped in "data", and both forms
-// are accepted, because models differ in how faithfully they nest an object:
+// 参数可以位于 "command" 旁边或包裹在 "data" 中，两种形式
+// 都被接受，因为不同模型嵌套对象的方式不同：
 //
 //	{"command": "read", "filename": "a.md", "start": 1, "end": 20}
 //	{"command": "write", "data": {"filename": "a.md", "content": "hi"}}
 //
-// An "id" on either level is kept so the result can be matched with the call
-// that produced it, the one next to "command" winning; when neither is given a
-// snowflake id is generated.
+// 两个层级上的 "id" 都会被保留，以便结果与产生它的调用匹配，
+// "command" 旁边的 id 优先；当两者都未提供时生成雪花 id。
 func Parse(raw []byte) (command.CommandOption, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, ErrEmptyPayload
@@ -52,7 +50,7 @@ func Parse(raw []byte) (command.CommandOption, error) {
 		return nil, fmt.Errorf("%w: missing command name", ErrMalformedCommand)
 	}
 
-	// Nested parameters win, otherwise the object itself carries them flat.
+	// 嵌套参数优先，否则对象本身以扁平形式携带参数。
 	payload := raw
 	if data, ok := fields["data"]; ok && len(bytes.TrimSpace(data)) > 0 {
 		payload = data
@@ -70,8 +68,8 @@ func Parse(raw []byte) (command.CommandOption, error) {
 	return opt, nil
 }
 
-// ParseAll decodes a single command object or an array of them, which is what a
-// model emits when it wants several tools to run in one turn.
+// ParseAll 解码单个命令对象或对象数组，
+// 后者是模型希望在一轮中运行多个工具时的输出形式。
 func ParseAll(raw []byte) ([]command.CommandOption, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
@@ -103,10 +101,10 @@ func ParseAll(raw []byte) ([]command.CommandOption, error) {
 	return options, nil
 }
 
-// OptionFromCall builds an option out of a tool call, whose name and arguments
-// arrive separately. arguments holds the parameter object, with or without the
-// "data" wrapper; the name and id of the call always win over fields of the
-// same name inside it, and a zero id lets Parse generate one.
+// OptionFromCall 从工具调用构建 option，其 name 和 arguments 分别传入。
+// arguments 持有参数对象，无论是否有 "data" 包裹；
+// 调用的 name 和 id 始终优先于其中同名字段，
+// 零 id 则让 Parse 生成一个。
 func OptionFromCall(id int64, name, arguments string) (command.CommandOption, error) {
 	body := strings.TrimSpace(arguments)
 	if body == "" {
@@ -135,7 +133,7 @@ func OptionFromCall(id int64, name, arguments string) (command.CommandOption, er
 	return Parse(raw)
 }
 
-// parseOption decodes the parameter object of a known command.
+// parseOption 解码已知命令的参数对象。
 func parseOption(name string, payload json.RawMessage) (command.CommandOption, error) {
 	switch name {
 	case handler.CommandCreateTask:
@@ -195,8 +193,7 @@ func parseOption(name string, payload json.RawMessage) (command.CommandOption, e
 	}
 }
 
-// setId writes the envelope id into an option, whose concrete type the parser
-// knows but the generic flow does not.
+// setId 将信封 id 写入 option，解析器知道其具体类型但通用流程不知道。
 func setId(opt command.CommandOption, id int64) {
 	if id == 0 {
 		return
@@ -215,8 +212,7 @@ func setId(opt command.CommandOption, id int64) {
 	}
 }
 
-// setReasoning writes the reasoning into an option, so the handler can publish
-// it alongside the ToolBeforeEvent.
+// setReasoning 将推理过程写入 option，以便处理器在发布 ToolBeforeEvent 时使用。
 func setReasoning(opt command.CommandOption, reasoning string) {
 	if reasoning == "" {
 		return
@@ -235,10 +231,10 @@ func setReasoning(opt command.CommandOption, reasoning string) {
 	}
 }
 
-// parseId decodes an "id" field into the int64 the options carry. A model may
-// spell it either as a number or as a quoted number, so both are accepted; a
-// missing or unreadable one, a call id such as "call-1" included, yields 0 so
-// the caller replaces it with a generated one instead of failing the command.
+// parseId 将 "id" 字段解码为 option 携带的 int64。模型可能
+// 将其写为数字或引号包裹的数字，两种形式都被接受；
+// 缺失或不可读的 id（包括 "call-1" 这样的调用 id）返回 0，
+// 调用方会用生成的 id 替换而不是使命令失败。
 func parseId(raw json.RawMessage) int64 {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return 0
@@ -269,15 +265,14 @@ func unmarshalField(fields map[string]json.RawMessage, name string, target any) 
 	return nil
 }
 
-// ParseTextCalls extracts the commands a model wrote into its reply text,
-// which is how providers without native function calling ask for tools.
+// ParseTextCalls 提取模型写入回复文本中的命令，
+// 这是没有原生函数调用的 Provider 请求工具的方式。
 //
-// The scan looks for balanced {..} and [..] values anywhere in the content —
-// prose and code fences around them are ignored — and keeps only objects
-// whose "command" names a known command, or arrays of such objects. Anything
-// else, a JSON example that merely mentions the field included, is skipped.
-// The call arguments are the object without its "command" field, so
-// OptionFromCall rebuilds the envelope exactly as it does for native calls.
+// 扫描在内容中查找平衡的 {..} 和 [..] 值——周围的散文和代码块
+// 会被忽略——只保留 "command" 命名已知命令的对象或此类对象的数组。
+// 其他内容（例如仅提到该字段的 JSON 示例）会被跳过。
+// 调用参数是不含 "command" 字段的对象，因此 OptionFromCall
+// 会像原生调用一样重建信封。
 func ParseTextCalls(content string) []llm.ToolCall {
 	var calls []llm.ToolCall
 	for _, span := range jsonSpans(content) {
@@ -286,10 +281,10 @@ func ParseTextCalls(content string) []llm.ToolCall {
 	return calls
 }
 
-// jsonSpans returns the balanced {...} and [...] substrings of text. It is a
-// bracket scanner rather than a parser: the caller unmarshals a span to decide
-// whether it is really what it looks for. Brackets inside string literals do
-// not count, so a command may carry arbitrary text in its arguments.
+// jsonSpans 返回 text 中平衡的 {...} 和 [...] 子串。
+// 它是括号扫描器而非解析器：调用方通过反序列化来决定
+// 是否真的是它要找的内容。字符串字面量内的括号不计入，
+// 因此命令可以在参数中携带任意文本。
 func jsonSpans(text string) []string {
 	var spans []string
 	for index := 0; index < len(text); index++ {
@@ -306,9 +301,8 @@ func jsonSpans(text string) []string {
 	return spans
 }
 
-// jsonSpanEnd returns the index just past the value opened at start. Closing
-// brackets must match their openers, so a stray brace cannot glue two
-// neighbouring values into one span.
+// jsonSpanEnd 返回 start 处开启的值之后的索引。闭合括号
+// 必须与开启括号匹配，因此散落的括号不会将相邻值合并为一个。
 func jsonSpanEnd(text string, start int) (int, bool) {
 	var closers []byte
 	inString, escaped := false, false
@@ -345,8 +339,8 @@ func jsonSpanEnd(text string, start int) (int, bool) {
 	return 0, false
 }
 
-// appendSpanCalls keeps the commands of one span. A span is either a single
-// command object or an array of them, the two shapes ToolSchema documents.
+// appendSpanCalls 保留一个片段中的命令。片段要么是单个命令对象，
+// 要么是对象数组，即 ToolSchema 文档记录的两种形式。
 func appendSpanCalls(calls []llm.ToolCall, span string) []llm.ToolCall {
 	trimmed := strings.TrimSpace(span)
 	if strings.HasPrefix(trimmed, "[") {
@@ -362,8 +356,7 @@ func appendSpanCalls(calls []llm.ToolCall, span string) []llm.ToolCall {
 	return appendCommandCall(calls, []byte(trimmed))
 }
 
-// appendCommandCall appends the call of one object when it is a command the
-// runtime can run.
+// appendCommandCall 在对象是运行时可执行的命令时追加其调用。
 func appendCommandCall(calls []llm.ToolCall, raw []byte) []llm.ToolCall {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -386,7 +379,7 @@ func appendCommandCall(calls []llm.ToolCall, raw []byte) []llm.ToolCall {
 	return append(calls, llm.ToolCall{Name: name, Arguments: string(arguments)})
 }
 
-// isCommand reports whether name is one of the commands the handlers accept.
+// isCommand 报告 name 是否为处理器接受的命令之一。
 func isCommand(name string) bool {
 	for _, known := range handler.Commands() {
 		if name == known {

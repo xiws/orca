@@ -14,16 +14,14 @@ import (
 	"testing"
 )
 
-// defaultProvider / defaultModel mirror .orca/setting.json and select the model
-// used by the live integration test below.
+// defaultProvider / defaultModel 镜像 .orca/setting.json，选择下方实时集成测试使用的模型。
 const (
 	defaultProvider = "ollama"
 	defaultModel    = "ornith-1.5:9b"
 )
 
-// TestRequesterParsesOpenAIStream drives Request against a canned OpenAI-style
-// SSE stream, so the streaming, tool-call assembly and usage parsing are
-// verified deterministically without reaching a real model.
+// TestRequesterParsesOpenAIStream 驱动 Request 对接预制的 OpenAI 风格 SSE 流，
+// 使流式传输、工具调用组装和 usage 解析可以在不访问真实模型的情况下确定性地验证。
 func TestRequesterParsesOpenAIStream(t *testing.T) {
 	const sse = "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n" +
@@ -91,9 +89,8 @@ func TestRequesterParsesOpenAIStream(t *testing.T) {
 	}
 }
 
-// TestRequesterNilChannelDoesNotBlock confirms msgs may be nil, in which case
-// the content is only collected into the returned Result. It runs against the
-// same fake server so it needs no live model.
+// TestRequesterNilChannelDoesNotBlock 确认 msgs 可以为 nil，
+// 此时内容仅收集到返回的 Result 中。它对接相同的 fake 服务器，因此不需要实时模型。
 func TestRequesterNilChannelDoesNotBlock(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
@@ -110,8 +107,8 @@ func TestRequesterNilChannelDoesNotBlock(t *testing.T) {
 	}
 }
 
-// sentRequest mirrors the JSON body openAIClient.body marshals, so a fake
-// server can inspect what would be handed to the model.
+// sentRequest 镜像 openAIClient.body 编组的 JSON 请求体，
+// 使 fake 服务器可以检查将交给模型的内容。
 type sentRequest struct {
 	Model    string        `json:"model"`
 	Stream   bool          `json:"stream"`
@@ -119,10 +116,9 @@ type sentRequest struct {
 	Tools    []Tool        `json:"tools"`
 }
 
-// TestRequestSendsToolsOnlyWhenModelSupportsThem pins down the request side of
-// tool calling: the built-in commands are declared as OpenAI tools only for a
-// model that reports tool support, and the conversation travels in order with
-// streaming requested.
+// TestRequestSendsToolsOnlyWhenModelSupportsThem 固定工具调用的请求端：
+// 内置命令仅在模型报告工具支持时声明为 OpenAI 工具，
+// 对话按顺序传输并请求流式响应。
 func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -194,13 +190,11 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 	}
 }
 
-// TestRequestBodyKeepsToolProtocolOrder checks the wire form of a full tool
-// calling round trip: the assistant turn that asks for a tool, the tool message
-// that answers it by id, and the next assistant turn.
+// TestRequestBodyKeepsToolProtocolOrder 检查完整工具调用往返的线路形式：
+// 请求工具的助手轮次、按 id 回复的工具消息，以及下一个助手轮次。
 //
-// Losing either half is what makes a model lose track of what it has already
-// done: without the assistant message the tool output has no author, and
-// without the tool_call_id a strict server rejects the whole conversation.
+// 丢失任何一半都会使模型失去已做过的跟踪：没有助手消息，工具输出没有作者；
+// 没有 tool_call_id，严格的服务端会拒绝整个对话。
 func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
 	client := &openAIClient{info: ModelInfo{ModelID: "fake-model", SupportsTools: true}}
 	body := client.body([]ChatMessage{
@@ -213,8 +207,7 @@ func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
 		{Role: RoleTool, ToolCallID: "call-1", Content: `{"ok":true}`},
 		{Role: RoleTool, ToolCallID: "call-2", Content: `{"ok":true}`},
 		{Role: RoleAssistant, Content: "done"},
-		// An empty entry no longer carries anything the model can use and must
-		// not reach the wire at all.
+		// 空条目不再携带模型可用的内容，不应到达线路。
 		{Role: RoleUser, Content: ""},
 	})
 
@@ -248,9 +241,8 @@ func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
 	}
 }
 
-// TestRequesterAssemblesParallelToolCalls feeds a stream where two tool calls
-// arrive interleaved and out of index order, with their arguments split across
-// chunks, and checks they are reassembled into complete calls ordered by index.
+// TestRequesterAssemblesParallelToolCalls 输入一个两个工具调用交错且乱序到达的流，
+// 参数跨分块拆分，检查它们被重新组装为按索引排序的完整调用。
 func TestRequesterAssemblesParallelToolCalls(t *testing.T) {
 	const sse = `
 data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","function":{"name":"bash","arguments":"{\"content\":\"go "}}]}}]}
@@ -293,15 +285,14 @@ data: [DONE]
 	}
 }
 
-// TestRequesterWithDefaultModel issues a real streaming request to the model
-// configured in .orca/setting.json (ollama / ornith-1.5:9b). It is skipped in
-// short mode or when the local server is not running.
+// TestRequesterWithDefaultModel 向 .orca/setting.json 配置的模型发送实时流式请求
+// （ollama / ornith-1.5:9b）。在 short 模式或本地服务器未运行时跳过。
 func TestRequesterWithDefaultModel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live model request in short mode")
 	}
 
-	// Resolve .orca/models.json from the repository root, not the package dir.
+	// 从仓库根目录解析 .orca/models.json，而非包目录。
 	t.Chdir("../..")
 
 	info := GetProvider(defaultProvider, defaultModel)
@@ -345,17 +336,15 @@ func TestRequesterWithDefaultModel(t *testing.T) {
 		result.Usage.PromptTokens, result.Usage.CompletionTokens)
 }
 
-// TestRequesterReadsReadmeWithToolCalling is the round trip of tool calling
-// against the model configured in .orca/models.json: it asks the model to read
-// the repository README.md, expects a read tool call back, and decodes its
-// arguments the way handler.OptionFromCall will. It is skipped in short mode,
-// when the endpoint is unreachable or when the model does not support tools.
+// TestRequesterReadsReadmeWithToolCalling 是针对 .orca/setting.json 配置模型的工具调用往返：
+// 它要求模型读取仓库 README.md，期望返回 read 工具调用，并解码其参数
+// （与 handler.OptionFromCall 的方式一致）。在 short 模式、端点不可达或模型不支持工具时跳过。
 func TestRequesterReadsReadmeWithToolCalling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping live tool calling request in short mode")
 	}
 
-	// Resolve .orca/models.json and README.md from the repository root.
+	// 从仓库根目录解析 .orca/models.json 和 README.md。
 	t.Chdir("../..")
 
 	info := GetProvider(defaultProvider, defaultModel)
@@ -402,15 +391,15 @@ func TestRequesterReadsReadmeWithToolCalling(t *testing.T) {
 	if base := filepath.Base(options.Filename); base != "README.md" {
 		t.Errorf("read call targets %q, want %q", options.Filename, "README.md")
 	}
-	// The runtime can only serve a path that really exists relative to the
-	// workspace, which is what the tool description promises the model.
+	// 运行时只能服务于工作区中实际存在的路径，
+	// 这正是工具描述向模型承诺的。
 	if _, err := os.Stat(options.Filename); err != nil {
 		t.Errorf("read call filename %q cannot be opened: %v", options.Filename, err)
 	}
 }
 
-// isUnreachable reports whether err indicates the model endpoint could not be
-// contacted, which distinguishes "ollama not running" from a real failure.
+// isUnreachable 报告 err 是否表示无法联系模型端点，
+// 用于区分“ollama 未运行”和真实故障。
 func isUnreachable(err error) bool {
 	return errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, os.ErrDeadlineExceeded) ||

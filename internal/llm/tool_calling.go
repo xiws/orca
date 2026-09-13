@@ -1,19 +1,16 @@
 package llm
 
-// This file mirrors the read, write, edit and bash commands implemented by
-// internal/handler as OpenAI function-calling tool definitions, so a model that
-// supports tools can invoke them natively instead of through the free-form
-// JSON protocol described by handler.ToolPrompt.
+// 本文件将 internal/handler 实现的 read、write、edit 和 bash 命令
+// 镜像为 OpenAI 函数调用的工具定义，使支持工具的模型可以原生调用它们，
+// 而不必通过 handler.ToolPrompt 描述的自由格式 JSON 协议。
 //
-// The "name" of every tool and the "properties" of its parameters must stay in
-// sync with the json tags handler.parseOption accepts: a drift there would let
-// the model call something the runtime cannot decode back into an option.
+// 每个工具的 "name" 及其参数的 "properties" 必须与 handler.parseOption
+// 接受的 json 标签保持同步：否则模型可能调用运行时无法解码为 option 的内容。
 
-// ToolType is the only discriminator value OpenAI's chat completions protocol
-// accepts for entries of the "tools" array today.
+// ToolType 是 OpenAI chat completions 协议中 "tools" 数组目前唯一接受的分隔符值。
 const ToolType = "function"
 
-// Names of the built-in tools, matching handler.CommandRead/Write/Edit/Bash/CreateTask.
+// 内置工具名称，与 handler.CommandRead/Write/Edit/Bash/CreateTask 对应。
 const (
 	ToolRead       = "read"
 	ToolWrite      = "write"
@@ -22,24 +19,24 @@ const (
 	ToolCreateTask = "create_task"
 )
 
-// Tool is a single entry of the "tools" array sent with a chat completion
-// request, in the shape described by the OpenAI function-calling spec.
+// Tool 是 chat completion 请求中 "tools" 数组的单个条目，
+// 采用 OpenAI 函数调用规范描述的形式。
 type Tool struct {
 	Type     string       `json:"type"`
 	Function ToolFunction `json:"function"`
 }
 
-// ToolFunction is the "function" payload of a Tool: a name the model may call,
-// a description that tells it when to, and a JSON Schema for its arguments.
+// ToolFunction 是 Tool 的 "function" 载荷：模型可调用的名称、
+// 告知何时调用的描述，以及参数的 JSON Schema。
 type ToolFunction struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description,omitempty"`
 	Parameters  ToolSchema `json:"parameters"`
 }
 
-// ToolSchema is a minimal, self-referential JSON Schema object, enough to
-// describe the flat and one-level-nested parameter shapes every tool command
-// accepts (strings, integers, booleans and arrays of objects).
+// ToolSchema 是一个最小化的自引用 JSON Schema 对象，
+// 足以描述每个工具命令接受的扁平和一层嵌套参数形式
+// （字符串、整数、布尔值和对象数组）。
 type ToolSchema struct {
 	Type        string                `json:"type"`
 	Description string                `json:"description,omitempty"`
@@ -48,34 +45,32 @@ type ToolSchema struct {
 	Items       *ToolSchema           `json:"items,omitempty"`
 }
 
-// StringProperty builds a schema for a string parameter.
+// StringProperty 构建字符串参数的 schema。
 func StringProperty(description string) ToolSchema {
 	return ToolSchema{Type: "string", Description: description}
 }
 
-// IntegerProperty builds a schema for an integer parameter.
+// IntegerProperty 构建整数参数的 schema。
 func IntegerProperty(description string) ToolSchema {
 	return ToolSchema{Type: "integer", Description: description}
 }
 
-// BooleanProperty builds a schema for a boolean parameter.
+// BooleanProperty 构建布尔参数的 schema。
 func BooleanProperty(description string) ToolSchema {
 	return ToolSchema{Type: "boolean", Description: description}
 }
 
-// ObjectProperty builds a schema for a nested object parameter out of its
-// properties and the subset of them that are mandatory.
+// ObjectProperty 从属性及其必须子集构建嵌套对象参数的 schema。
 func ObjectProperty(description string, properties map[string]ToolSchema, required ...string) ToolSchema {
 	return ToolSchema{Type: "object", Description: description, Properties: properties, Required: required}
 }
 
-// ArrayProperty builds a schema for an array parameter whose elements are all
-// described by items.
+// ArrayProperty 构建数组参数的 schema，元素由 items 描述。
 func ArrayProperty(description string, items ToolSchema) ToolSchema {
 	return ToolSchema{Type: "array", Description: description, Items: &items}
 }
 
-// NewTool wraps name, description and a parameter schema into a Tool.
+// NewTool 将名称、描述和参数 schema 包装为 Tool。
 func NewTool(name, description string, parameters ToolSchema) Tool {
 	return Tool{
 		Type:     ToolType,
@@ -83,9 +78,8 @@ func NewTool(name, description string, parameters ToolSchema) Tool {
 	}
 }
 
-// ReadTool describes the read command: it returns a 1 based, inclusive line
-// range of a file, defaulting to the whole file when start and end are
-// omitted, and caps how many lines one call returns.
+// ReadTool 描述 read 命令：返回文件的基于 1 的行范围（包含两端），
+// 省略 start 和 end 时默认读取整个文件，并限制单次调用返回的最大行数。
 func ReadTool() Tool {
 	return NewTool(ToolRead,
 		"Read a file from the workspace and return it with 1 based line numbers. Omit start and end to read the whole file.",
@@ -96,9 +90,8 @@ func ReadTool() Tool {
 		}, "filename"))
 }
 
-// WriteTool describes the write command: it rebuilds a file from scratch,
-// creating missing parent directories, which is why editing an existing file
-// should prefer the edit tool instead.
+// WriteTool 描述 write 命令：从头重建文件，创建缺失的父目录，
+// 因此编辑已有文件应优先使用 edit 工具。
 func WriteTool() Tool {
 	return NewTool(ToolWrite,
 		"Create or overwrite a file with the given content, creating missing parent directories. Everything not present in content is lost; prefer edit for files that already exist.",
@@ -108,9 +101,8 @@ func WriteTool() Tool {
 		}, "filename", "content"))
 }
 
-// EditTool describes the edit command: a list of fragments applied to a file in
-// order, each a unified diff that hunkpatch applies contentually, tolerating
-// model imprecision.
+// EditTool 描述 edit 命令：按顺序应用到文件的片段列表，
+// 每个片段是 hunkpatch 基于内容模糊匹配的统一 diff，可容忍模型的不精确。
 func EditTool() Tool {
 	fragment := ObjectProperty("A single replacement to apply to the file", map[string]ToolSchema{
 		"diff": StringProperty("Unified diff to apply; line numbers are ignored, matching is content-based and tolerates model imprecision via hunkpatch's fuzzy algorithm"),
@@ -123,9 +115,8 @@ func EditTool() Tool {
 		}, "filename", "contents"))
 }
 
-// BashTool describes the bash command: it runs a command line in a shell,
-// optionally inside a working directory and with a custom timeout, and returns
-// stdout and stderr merged.
+// BashTool 描述 bash 命令：在 shell 中运行命令行，
+// 可选指定工作目录和自定义超时，返回合并的 stdout 和 stderr。
 func BashTool() Tool {
 	return NewTool(ToolBash,
 		"Run a command line in a shell and return stdout and stderr merged. The command is killed and reported as failed once timeout elapses.",
@@ -136,9 +127,8 @@ func BashTool() Tool {
 		}, "content"))
 }
 
-// CreateTaskTool describes the create_task command: it decomposes a high-level
-// goal into sub-tasks, runs each sub-task independently, and aggregates the
-// results back into a summary.
+// CreateTaskTool 描述 create_task 命令：将高层目标分解为子任务，
+// 独立运行每个子任务，并将结果聚合为摘要。
 func CreateTaskTool() Tool {
 	subTask := ObjectProperty("A single sub-task to create and run", map[string]ToolSchema{
 		"title":       StringProperty("Short title of the sub-task"),
@@ -151,8 +141,7 @@ func CreateTaskTool() Tool {
 		}, "task_target"))
 }
 
-// Tools returns the definitions of every built-in command, in the order they
-// are registered by handler.Register.
+// Tools 返回所有内置命令的定义，顺序与 handler.Register 注册时一致。
 func Tools() []Tool {
 	return []Tool{ReadTool(), WriteTool(), EditTool(), BashTool(), CreateTaskTool()}
 }

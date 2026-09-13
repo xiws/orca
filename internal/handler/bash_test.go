@@ -79,8 +79,8 @@ func TestBashHandlerKillsTheWholeProcessGroup(t *testing.T) {
 	}
 	_, handle := newWorkspace(t)
 
-	// The shell records the pid of the child it started, so the test can check
-	// afterwards that the timeout took the child down as well.
+	// shell 记录它启动的子进程 pid，因此测试可以在事后检查
+	// 超时是否也将子进程带走。
 	marker := filepath.Join(t.TempDir(), "child.pid")
 	result := handleOne(t, handle, NewBashOption(1,
 		fmt.Sprintf(`sleep 30 & echo $! > %s; wait`, marker), "", 1))
@@ -161,7 +161,7 @@ func TestCappedWriterCountsDroppedBytes(t *testing.T) {
 		t.Fatalf("capped writer = (%q, %d), want the head plus 2 dropped bytes", out.String(), out.dropped)
 	}
 
-	// Writing beyond the limit stays harmless.
+	// 超出限制后继续写入是无害的。
 	if _, err := out.Write([]byte("more")); err != nil {
 		t.Fatalf("Write() after the limit = %v", err)
 	}

@@ -1,16 +1,15 @@
 package llm
 
-// ChatMessage is one entry of a conversation, in the shape of the OpenAI chat
-// protocol. Which fields carry data depends on Role:
+// ChatMessage 是对话中的一条记录，采用 OpenAI 聊天协议的形式。
+// 哪些字段携带数据取决于 Role：
 //
 //	RoleSystem, RoleUser  Content
-//	RoleAssistant         Content and, when the model asked for tools, ToolCalls
-//	RoleTool              Content and ToolCallID
+//	RoleAssistant         Content，以及当模型请求工具时的 ToolCalls
+//	RoleTool              Content 和 ToolCallID
 //
-// The protocol constrains the order of these messages and the runtime has to
-// honour it: an assistant message carrying tool calls must be followed by one
-// RoleTool message per call, each quoting the id of the call it answers, and
-// nothing may be inserted between them.
+// 协议约束了这些消息的顺序，运行时必须遵守：
+// 携带工具调用的助手消息后面必须紧跟每个调用对应的一条 RoleTool 消息，
+// 每条引用其回复的调用 id，中间不得插入其他内容。
 type ChatMessage struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content,omitempty"`
@@ -20,7 +19,7 @@ type ChatMessage struct {
 	Id         int64      `json:"id"`
 }
 
-// Roles used to build a PromptContext.
+// 用于构建 PromptContext 的角色常量。
 const (
 	RoleSystem    = "system"
 	RoleUser      = "user"
@@ -28,8 +27,8 @@ const (
 	RoleAssistant = "assistant"
 )
 
-// IsToolCallTurn reports whether the message is an assistant turn that asks for
-// tools, which is what the following tool messages must answer.
+// IsToolCallTurn 报告消息是否是请求工具的助手轮次，
+// 即后续工具消息需要回复的对象。
 func (m ChatMessage) IsToolCallTurn() bool {
 	return m.Role == RoleAssistant && len(m.ToolCalls) > 0
 }

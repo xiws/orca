@@ -8,21 +8,20 @@ var (
 	MODEL_FILE = "models.json"
 )
 
-// ModelInfo describes a concrete model together with the connection details of
-// the provider that serves it.
+// ModelInfo 描述一个具体模型及其 provider 的连接详情。
 type ModelInfo struct {
-	Provider      string // provider key in models.json, e.g. "ollama"
-	Name          string // provider display name, e.g. "Ollama (Local)"
-	API           string // api type, e.g. "openai-completions" or "otter"
+	Provider      string // models.json 中的 provider 键，例如 "ollama"
+	Name          string // provider 显示名称，例如 "Ollama (Local)"
+	API           string // api 类型，例如 "openai-completions" 或 "otter"
 	BaseURL       string
 	APIKey        string
-	ModelID       string // model id used when calling the api
+	ModelID       string // 调用 api 时使用的模型 id
 	ContextWindow int
 	SupportsTools bool
 	Reasoning     bool
 }
 
-// fileModel is a per-model entry as stored in models.json.
+// fileModel 是 models.json 中每个模型的存储格式。
 type fileModel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -31,7 +30,7 @@ type fileModel struct {
 	Reasoning     bool   `json:"reasoning"`
 }
 
-// fileProvider is a provider entry as stored in models.json.
+// fileProvider 是 models.json 中每个 provider 的存储格式。
 type fileProvider struct {
 	Name    string      `json:"name"`
 	API     string      `json:"api"`
@@ -40,15 +39,15 @@ type fileProvider struct {
 	Models  []fileModel `json:"models"`
 }
 
-// modelsFile is the root document of models.json.
+// modelsFile 是 models.json 的根文档。
 type modelsFile struct {
 	Providers map[string]fileProvider `json:"providers"`
 }
 
-// GetProvider resolves providerName and modelId into a ModelInfo, merging the
-// model properties with the provider's connection details.
+// GetProvider 将 providerName 和 modelId 解析为 ModelInfo，
+// 将模型属性与 provider 的连接详情合并。
 //
-// A zero ModelInfo is returned when the provider or the model cannot be found.
+// 当 provider 或模型找不到时返回零值 ModelInfo。
 func GetProvider(providerName, modelId string) ModelInfo {
 	provider, ok := loadProviders()[providerName]
 	if !ok {
@@ -73,11 +72,11 @@ func GetProvider(providerName, modelId string) ModelInfo {
 	return ModelInfo{}
 }
 
-// loadProviders reads models.json from the user home and the project directory,
-// merging them so that project-level entries win over home-level ones.
+// loadProviders 从用户主目录和项目目录读取 models.json，
+// 合并它们，使项目级条目优先于主目录级条目。
 func loadProviders() map[string]fileProvider {
 	merged := make(map[string]fileProvider)
-	// Lower priority first (~), higher priority last (project) so it overwrites.
+	// 低优先级在前（~），高优先级在后（项目），以便覆盖。
 
 	var file modelsFile
 	if err := utils.GetModel(MODEL_FILE, &file); err != nil {

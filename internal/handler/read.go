@@ -8,21 +8,20 @@ import (
 	"github.com/xiws/orca/pkg/command"
 )
 
-// MaxReadLines caps how many lines one read command returns. Larger ranges are
-// cut short and the result tells the caller how to continue.
+// MaxReadLines 限制单个 read 命令返回的行数。更大的范围会被截断，
+// 结果会告诉调用方如何继续。
 const MaxReadLines = 2000
 
-// ReadHandler serves the read command.
+// ReadHandler 服务 read 命令。
 type ReadHandler struct {
 	Workspace
 }
 
-// Handle returns the requested line range of a file, prefixed by line numbers.
+// Handle 返回文件的请求行范围，前缀带行号。
 //
-// A file that cannot be read — missing, outside the workspace, with a range
-// beyond its end — is a failed CommandResult, not a Go error. The model has to
-// be able to read the reason and try another path; aborting the whole task on a
-// guess that did not pan out is what a failed read used to do.
+// 无法读取的文件——缺失、在工作区外、范围超出末尾——是失败的
+// CommandResult，而非 Go error。模型必须能读取原因并尝试其他路径；
+// 因猜测失败而中止整个任务是过去 read 的做法。
 func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	readOption, ok := cmd.(*ReadOption)
 	if !ok {
@@ -86,7 +85,7 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	return out.String(), nil
 }
 
-// buildMeta returns the contextual description for a read operation.
+// buildMeta 返回 read 操作的上下文描述。
 func (t ReadHandler) buildMeta(opt *ReadOption) string {
 	if opt.Start > 0 || opt.End > 0 {
 		return fmt.Sprintf("lines %d-%d", opt.Start, opt.End)

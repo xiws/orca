@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// eventSeq gives every test event a unique id so publishing and comparing stay
-// independent of any wall clock.
+// eventSeq 为每个测试事件赋予唯一 id，使发布和比较不依赖任何时钟。
 var eventSeq atomic.Int64
 
 type testEvent struct {

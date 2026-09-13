@@ -6,13 +6,13 @@ import (
 	"github.com/xiws/orca/pkg/command"
 )
 
-// WriteHandler serves the write command.
+// WriteHandler 服务 write 命令。
 type WriteHandler struct {
 	Workspace
 }
 
-// Handle rebuilds a file from scratch. Anything that is not part of Content is
-// lost, which is why editing an existing file should prefer the edit command.
+// Handle 从头重建文件。不属于 Content 的部分会丢失，
+// 这就是编辑已有文件应优先使用 edit 命令的原因。
 func (t WriteHandler) Handle(cmd command.CommandOption) (error, any) {
 	opt, ok := cmd.(*WriteOption)
 	if !ok {

@@ -12,12 +12,10 @@ import (
 	"github.com/xiws/orca/pkg/command"
 )
 
-// newWorkspace returns a workspace rooted in a temporary directory, with all
-// four command handlers registered.
+// newWorkspace 返回以临时目录为根的工作区，注册所有四个命令处理器。
 //
-// The root is a fresh temporary directory rather than the repository itself:
-// the write and edit tests really create files, and pointing them at the
-// checkout used to litter it.
+// 根目录是新的临时目录而非仓库本身：write 和 edit 测试确实会创建文件，
+// 将它们指向 checkout 会污染它。
 func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 	t.Helper()
 	root := t.TempDir()
@@ -42,7 +40,7 @@ func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 	return Workspace{Root: root, Publisher: bus}, handle
 }
 
-// seed writes content to name inside ws and returns the full path.
+// seed 将 content 写入 ws 中的 name 并返回完整路径。
 func seed(t *testing.T, ws Workspace, name, content string) string {
 	t.Helper()
 	path := filepath.Join(ws.Root, name)
@@ -55,7 +53,7 @@ func seed(t *testing.T, ws Workspace, name, content string) string {
 	return path
 }
 
-// readRawFile returns the content of name inside ws.
+// readRawFile 返回 ws 中 name 的内容。
 func readRawFile(t *testing.T, ws Workspace, name string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(ws.Root, name))
@@ -65,8 +63,7 @@ func readRawFile(t *testing.T, ws Workspace, name string) string {
 	return string(data)
 }
 
-// samePath compares two paths after resolving symlinks, ignoring a path that
-// cannot be resolved.
+// samePath 在解析符号链接后比较两个路径，忽略无法解析的路径。
 func samePath(t *testing.T, left, right string) bool {
 	t.Helper()
 	resolve := func(path string) string {
@@ -78,8 +75,7 @@ func samePath(t *testing.T, left, right string) bool {
 	return resolve(left) == resolve(right)
 }
 
-// handleOne runs a single option through the registry and assets that the
-// framework accepted it.
+// handleOne 通过注册表运行单个 option 并断言框架接受了它。
 func handleOne(t *testing.T, handle *command.CommandHandle, cmd command.CommandOption) CommandResult {
 	t.Helper()
 	err, value := handle.Execute(cmd)
@@ -126,9 +122,8 @@ func TestRegisterDispatchesAllCommands(t *testing.T) {
 	if !bashed.OK {
 		t.Fatalf("bash result = %+v", bashed)
 	}
-	// A shell may report the directory as it was handed over or with symlinks
-	// resolved, which temporary directories on macOS are, so compare the
-	// physical forms.
+	// shell 可能按接收时的目录报告，也可能按解析符号链接后的目录报告，
+	// macOS 上的临时目录是后者，因此比较物理形式。
 	if got := strings.TrimSpace(bashed.Content); !samePath(t, got, ws.Root) {
 		t.Fatalf("bash ran in %q, want %q", got, ws.Root)
 	}

@@ -1,5 +1,5 @@
-// Package agent drives a conversation: it asks a model for the next step,
-// runs the commands the model asks for and hands the results back to it.
+// Package agent 驱动对话流程：向模型请求下一步操作，
+// 执行模型要求的命令并将结果返回给它。
 package agent
 
 import (
@@ -17,24 +17,22 @@ import (
 	"github.com/xiws/orca/pkg/utils"
 )
 
-// MaxTurns caps how many model turns one task may take. A model that keeps
-// asking for tools would otherwise loop forever and never hand back an answer.
+// MaxTurns 限制单个任务可执行的模型轮次。如果模型不断请求工具，
+// 否则会无限循环，永远无法返回答案。
 const MaxTurns = 64
 
-// ErrMaxTurns is returned when a task reaches MaxTurns while the model is still
-// calling tools.
+// ErrMaxTurns 在任务达到 MaxTurns 而模型仍在调用工具时返回。
 var ErrMaxTurns = errors.New("agent: reached the turn limit while the model kept calling tools")
 
-// requesterFactory builds the client used to talk to the model. A test installs
-// its own to drive the loop against a scripted model.
+// requesterFactory 构建与模型对话的客户端。测试会安装自己的
+// 实现来驱动循环，使用脚本化的模型响应。
 type requesterFactory func(llm.ModelInfo) llm.Requester
 
-// Runtime executes the commands produced by one model turn.
+// Runtime 执行一个模型轮次产生的命令。
 //
-// Commands always run in the order the model produced them and never
-// concurrently: a read, write or edit that follows another one must not see
-// stale content, and a bash command may depend on the file a previous write
-// just created.
+// 命令始终按模型产生的顺序执行，不会并发：
+// 一个接一个的读取、写入或编辑不会看到过时的内容，
+// 而 bash 命令可能依赖前一个写入刚创建的文件。
 type Runtime struct {
 	commands     command.Command
 	bus          event.EventPublisher
@@ -43,8 +41,8 @@ type Runtime struct {
 	newRequester requesterFactory
 }
 
-// NewRuntime wires a command registry to an event bus. The bus may be nil, in
-// which case results are only returned to the caller.
+// NewRuntime 将命令注册表连接到事件总线。总线可以为 nil，
+// 此时结果仅返回给调用方。
 func NewRuntime() *Runtime {
 
 	bus, err := registerEvent()
@@ -69,10 +67,9 @@ func NewRuntime() *Runtime {
 	return runtime
 }
 
-// RegisterEvent starts the event bus the runtime publishes command results on,
-// if it does not exist yet, and subscribes h to eventName. Call it repeatedly to
-// attach more subscribers to the same bus; the topics are the names returned by
-// event.Event.GetName.
+// registerEvent 启动运行时发布命令结果的事件总线，
+// 如果尚未存在，并将 h 订阅到 eventName。重复调用可将更多
+// 订阅者附加到同一总线；主题名称由 event.Event.GetName 返回。
 func registerEvent() (event.EventPublisher, error) {
 	bus := event.NewEventBus()
 	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
@@ -105,18 +102,16 @@ func (r *Runtime) ExecuteCommand(opt command.CommandOption) (error, any) {
 	return r.commands.Execute(opt)
 }
 
-// execute drives the model loop of a single task until it stops asking for
-// tools.
+// execute 驱动单个任务的模型循环，直到模型不再请求工具。
 //
-// Every round stores the assistant turn before running its tools, so the
-// conversation always reads back as the protocol requires: the assistant
-// message carrying tool calls, then one tool message per call quoting it.
+// 每轮在运行工具之前先存储助手消息，因此对话始终按协议要求读取：
+// 携带工具调用的助手消息，然后每个调用对应一条工具消息。
 func (r *Runtime) execute(task *Task) (error, string) {
 	var requester = r.buildRequester(task.SessionInfo.GetProvider())
 
-	// Restore otter platform state if the requester supports it and the
-	// session carries a previously saved state. This lets a resumed process
-	// continue the same remote conversation instead of creating a new one.
+	// 如果 requester 支持且会话携带之前保存的状态，
+	// 则恢复 otter 平台状态。这让恢复的流程可以继续
+	// 同一个远程对话，而不是创建新对话。
 	restoreOtterState(requester, task.SessionInfo)
 
 	for turn := 0; turn < MaxTurns; turn++ {
@@ -128,14 +123,14 @@ func (r *Runtime) execute(task *Task) (error, string) {
 		task.SessionInfo.AddUsage(res.Usage)
 		r.reportUsage(task, res.Usage)
 
-		// Capture otter platform state after each successful request so a
-		// crash or resume picks up where the conversation left off.
+		// 每次成功请求后捕获 otter 平台状态，以便
+		// 崩溃或恢复时能从对话中断处继续。
 		captureOtterState(requester, task.SessionInfo)
 
 		calls := llm.EnsureToolCallIDs(res.ToolCalls)
 		if len(calls) == 0 && !task.SessionInfo.Provider.SupportsTools {
-			// The provider cannot call tools natively: the model embeds the
-			// commands in its reply text, and they are lifted out here.
+			// Provider 无法原生调用工具：模型将命令嵌入
+			// 回复文本中，在此处提取出来。
 			calls = llm.EnsureToolCallIDs(ParseTextCalls(res.Content))
 		}
 		task.SessionInfo.AppendAssistant(res.Content, calls)
@@ -151,8 +146,8 @@ func (r *Runtime) execute(task *Task) (error, string) {
 	return ErrMaxTurns, ""
 }
 
-// restoreOtterState rehydrates the requester from the session's saved otter
-// state, if the requester supports it and the session carries one.
+// restoreOtterState 从会话保存的 otter 状态重新加载 requester，
+// 如果 requester 支持且会话携带了状态。
 func restoreOtterState(requester llm.Requester, session *Session) {
 	type stateRestorer interface {
 		RestoreState(llm.OtterState)
@@ -167,8 +162,8 @@ func restoreOtterState(requester llm.Requester, session *Session) {
 	}
 }
 
-// captureOtterState snapshots the requester's otter platform state into the
-// session, if the requester supports it.
+// captureOtterState 将 requester 的 otter 平台状态快照保存到会话中，
+// 如果 requester 支持。
 func captureOtterState(requester llm.Requester, session *Session) {
 	type stateCapture interface {
 		State() llm.OtterState
@@ -178,8 +173,8 @@ func captureOtterState(requester llm.Requester, session *Session) {
 	}
 }
 
-// buildRequester returns the client for info, honouring the factory a test
-// installed on a Runtime literal.
+// buildRequester 返回 info 的客户端，尊重测试在 Runtime 字面量上
+// 安装的工厂函数。
 func (r *Runtime) buildRequester(info llm.ModelInfo) llm.Requester {
 	if r.newRequester != nil {
 		return r.newRequester(info)
@@ -187,7 +182,7 @@ func (r *Runtime) buildRequester(info llm.ModelInfo) llm.Requester {
 	return llm.NewRequester(info)
 }
 
-// reportUsage prints the token consumption of one round when debug is on.
+// reportUsage 在 debug 开启时打印单轮的 token 消耗。
 func (r *Runtime) reportUsage(task *Task, usage llm.Usage) {
 	if tool.Get(tool.KeyDebug) != "true" {
 		return
@@ -197,13 +192,12 @@ func (r *Runtime) reportUsage(task *Task, usage llm.Usage) {
 		task.SessionInfo.TotalUsage.TotalTokens, task.SessionInfo.Provider.ContextWindow)
 }
 
-// executeCommand runs the tool calls of one assistant turn, in order, and
-// answers every one of them with exactly one tool message.
+// executeCommand 按顺序运行一个助手轮次的工具调用，
+// 并为每个调用回复恰好一条工具消息。
 //
-// A call that fails is answered too. The failure travels as a failed
-// CommandResult rather than as a Go error, because the protocol demands one tool
-// message per call and a model corrects a wrong path or a bad argument far
-// better when it can read what went wrong than when the loop dies.
+// 失败的调用也会被回复。失败以 CommandResult 的形式传递，
+// 而不是 Go error，因为协议要求每个调用对应一条工具消息，
+// 而且模型在能读取错误原因时比循环崩溃时更好地纠正错误路径。
 func (r *Runtime) executeCommand(task *Task, calls []llm.ToolCall) error {
 	for _, call := range calls {
 		content, err := r.runTool(task, call)
@@ -215,8 +209,7 @@ func (r *Runtime) executeCommand(task *Task, calls []llm.ToolCall) error {
 	return nil
 }
 
-// runTool executes one tool call and renders the content of the tool message
-// that answers it.
+// runTool 执行一个工具调用并渲染回复它的工具消息内容。
 func (r *Runtime) runTool(task *Task, call llm.ToolCall) (string, error) {
 	id := utils.GetSnowFlakeId()
 	opt, err := OptionFromCall(id, call.Name, call.Arguments)
@@ -237,27 +230,26 @@ func (r *Runtime) runTool(task *Task, call llm.ToolCall) (string, error) {
 		return "", fmt.Errorf("agent: command %q returned an unexpected result", call.Name)
 	}
 
-	// create_task carries sub-tasks rather than a payload: they are run here and
-	// the aggregate answer is what the tool message reports back.
+	// create_task 携带子任务而非负载：它们在此处运行，
+	// 聚合结果作为工具消息回复。
 	if result.OK && result.Command == handler.CommandCreateTask {
 		return r.runSubTasks(task, result), nil
 	}
 	return result.JSON(), nil
 }
 
-// failureResult renders the tool message for a call the runtime never got to
-// run, such as an unknown tool or arguments it cannot decode.
+// failureResult 渲染运行时未能执行的工具消息，
+// 例如未知工具或无法解码的参数。
 func failureResult(call llm.ToolCall, err error) string {
 	return handler.NewResult(0, call.Name, "", err).JSON()
 }
 
-// runSubTasks executes the sub-tasks of a create_task call and folds their
-// answers into the single tool message that answers that call.
+// runSubTasks 执行 create_task 调用的子任务，并将它们的结果
+// 折叠到回复该调用的单条工具消息中。
 //
-// Each sub-task is a task of its own with its own conversation, so it is given
-// the same system prompt the parent runs under. Without it the child would know
-// neither the project it works in nor the conventions it is meant to follow,
-// and would start by exploring the tree at random.
+// 每个子任务都是独立的任务，拥有自己的对话，因此它会获得
+// 与父任务相同的系统提示。没有它，子任务将不知道
+// 它工作的项目和应遵循的约定，会开始随机探索目录树。
 func (r *Runtime) runSubTasks(parent *Task, result handler.CommandResult) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "created %d sub-task(s)\n", len(result.TaskTarget))

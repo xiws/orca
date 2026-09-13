@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-// TestToolsMarshalToOpenAIShape checks that Tools() serializes into the exact
-// envelope OpenAI's /chat/completions expects: a "tools" array of
-// {"type":"function","function":{...}} entries, each carrying a JSON Schema
-// "parameters" object.
+// TestToolsMarshalToOpenAIShape 检查 Tools() 序列化为 OpenAI /chat/completions
+// 期望的确切信封：一个 "tools" 数组，包含 {"type":"function","function":{...}} 条目，
+// 每个携带 JSON Schema "parameters" 对象。
 func TestToolsMarshalToOpenAIShape(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{"tools": Tools()})
 	if err != nil {
@@ -53,11 +52,9 @@ func TestToolsMarshalToOpenAIShape(t *testing.T) {
 	}
 }
 
-// TestToolParametersMatchHandlerProtocol keeps the declared property names in
-// sync with the json tags handler.parseOption accepts, so the model can never
-// be told about a parameter the runtime cannot decode. The expected shapes are
-// spelled out literally here rather than derived from the handler package, to
-// avoid making llm depend on it.
+// TestToolParametersMatchHandlerProtocol 保持声明的属性名与 handler.parseOption
+// 接受的 json 标签同步，使模型永远不会被告知运行时无法解码的参数。
+// 预期形式在此处明确写出，而不是从 handler 包派生，以避免 llm 依赖它。
 func TestToolParametersMatchHandlerProtocol(t *testing.T) {
 	want := map[string][]string{
 		ToolRead:       {"filename", "start", "end"},
@@ -79,11 +76,10 @@ func TestToolParametersMatchHandlerProtocol(t *testing.T) {
 	}
 }
 
-// TestEditToolDescribesFragmentProperties checks the one nested schema among
-// the four tools keeps the single locator the edit handler understands: a
-// unified diff, matched by content. start/end/content used to be a second
-// locator and must not resurface, or the model will send fragments the
-// runtime rejects.
+// TestEditToolDescribesFragmentProperties 检查四个工具中唯一的嵌套 schema
+// 保持了 edit handler 理解的唯一定位器：基于内容匹配的统一 diff。
+// start/end/content 曾经是第二个定位器，不得再次出现，
+// 否则模型会发送运行时拒绝的片段。
 func TestEditToolDescribesFragmentProperties(t *testing.T) {
 	raw, err := json.Marshal(EditTool())
 	if err != nil {
@@ -108,10 +104,9 @@ func TestEditToolDescribesFragmentProperties(t *testing.T) {
 	}
 }
 
-// TestCreateTaskToolDescribesTaskTargetProperties pins the nested shape of
-// task_target: an array of {title, description} objects, matching the json
-// tags of handler.TaskBaseInfo. A drift here makes the model send a string
-// the runtime cannot decode, failing every create_task call.
+// TestCreateTaskToolDescribesTaskTargetProperties 固定 task_target 的嵌套形式：
+// 一个 {title, description} 对象数组，与 handler.TaskBaseInfo 的 json 标签匹配。
+// 此处的偏差会使模型发送运行时无法解码的字符串，导致每次 create_task 调用失败。
 func TestCreateTaskToolDescribesTaskTargetProperties(t *testing.T) {
 	raw, err := json.Marshal(CreateTaskTool())
 	if err != nil {

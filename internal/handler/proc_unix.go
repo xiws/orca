@@ -7,20 +7,19 @@ import (
 	"syscall"
 )
 
-// groupAttr starts the shell in its own process group, so the group can be
-// signalled as a unit later on.
+// groupAttr 在 shell 自己的进程组中启动，以便后续可以将整个组作为单元发信号。
 func groupAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-// killGroup kills the shell together with everything it spawned.
+// killGroup 将 shell 及其产生的所有进程一起杀死。
 func killGroup(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil
 	}
 	pgid, err := syscall.Getpgid(cmd.Process.Pid)
 	if err != nil {
-		// The shell is already gone, only itself can still be reaped.
+		// Shell 已经消失，只能尝试杀死它自身。
 		return cmd.Process.Kill()
 	}
 	return syscall.Kill(-pgid, syscall.SIGKILL)

@@ -10,10 +10,11 @@ import (
 	"github.com/xiws/orca/internal/session"
 )
 
-// HandleSessionCommand processes the "session" subcommand.
+// HandleSessionCommand 处理 "session" 子命令。
 func HandleSessionCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("session command requires a subcommand (list, rm)")
+		printSessionHelp()
+		return nil
 	}
 
 	switch args[0] {
@@ -25,11 +26,11 @@ func HandleSessionCommand(args []string) error {
 		printSessionHelp()
 		return nil
 	default:
-		return fmt.Errorf("unknown session subcommand: %s", args[0])
+		return fmt.Errorf("unknown session subcommand: %s (run 'orca session help' for usage)", args[0])
 	}
 }
 
-// listSessions displays all saved sessions.
+// listSessions 显示所有已保存的会话。
 func listSessions() error {
 	metas := session.List()
 	if len(metas) == 0 {
@@ -37,12 +38,12 @@ func listSessions() error {
 		return nil
 	}
 
-	// Print header
+	// 打印表头
 	fmt.Printf("%-20s  %-30s  %8s  %8s  %s\n",
 		"ID", "PROJECT", "MESSAGES", "TOKENS", "UPDATED")
 	fmt.Println(strings.Repeat("-", 100))
 
-	// Print each session
+	// 打印每个会话
 	for _, m := range metas {
 		project := truncatePath(m.ProjectPath, 30)
 		updated := formatRelativeTime(m.UpdateTime)
@@ -53,21 +54,21 @@ func listSessions() error {
 	return nil
 }
 
-// deleteSessions handles the "rm" subcommand with optional --all flag.
+// deleteSessions 处理带可选 --all 标志的 "rm" 子命令。
 func deleteSessions(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("rm requires a session ID or --all flag")
 	}
 
-	// Check for --all flag
+	// 检查 --all 标志
 	if args[0] == "--all" || args[0] == "-a" {
 		return deleteAllSessions()
 	}
 
-	// Delete specific sessions
+	// 删除指定会话
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "-") {
-			continue // Skip unknown flags
+			continue // 跳过未知标志
 		}
 
 		id, err := ParseSessionId(arg)
@@ -84,7 +85,7 @@ func deleteSessions(args []string) error {
 	return nil
 }
 
-// deleteAllSessions removes all sessions after confirmation.
+// deleteAllSessions 确认后删除所有会话。
 func deleteAllSessions() error {
 	metas := session.List()
 	if len(metas) == 0 {
@@ -100,23 +101,23 @@ func deleteAllSessions() error {
 	return nil
 }
 
-// truncatePath shortens a path to fit within maxLen characters.
+// truncatePath 缩短路径以适应 maxLen 个字符。
 func truncatePath(path string, maxLen int) string {
 	if len(path) <= maxLen {
 		return path
 	}
 
-	// Try to show the last part of the path
+	// 尝试显示路径的最后一部分
 	base := filepath.Base(path)
 	if len(base) <= maxLen-3 {
 		return "..." + path[len(path)-maxLen+3:]
 	}
 
-	// Just truncate from the beginning
+	// 从开头截断
 	return "..." + path[len(path)-maxLen+3:]
 }
 
-// formatRelativeTime formats a Unix timestamp as a human-readable relative time.
+// formatRelativeTime 将 Unix 时间戳格式化为可读的相对时间。
 func formatRelativeTime(timestamp int64) string {
 	if timestamp == 0 {
 		return "unknown"
@@ -151,20 +152,24 @@ func formatRelativeTime(timestamp int64) string {
 	}
 }
 
-// printSessionHelp displays help for the session subcommand.
+// printSessionHelp 显示会话子命令的帮助信息。
 func printSessionHelp() {
 	help := `Usage: orca session <command> [arguments]
 
+管理已保存的会话（列表包含项目目录与用户主目录下的全部会话）。
+
 Commands:
-  list, ls              List all saved sessions
-  rm, remove <id...>    Delete specified session(s)
-  rm --all              Delete all sessions
-  help                  Show this help message
+  list, ls              列出所有已保存的会话
+  rm, remove <id...>    删除指定会话
+  rm --all, -a          删除所有会话
+  help                  显示本帮助
 
 Examples:
   orca session list
   orca session rm 1234567890123456789
   orca session rm --all
+
+Tip: 使用 orca -session <id> "<prompt>" 可恢复指定会话继续对话。
 `
 	fmt.Fprint(os.Stdout, help)
 }

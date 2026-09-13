@@ -1,5 +1,4 @@
-// Package session provides persistence for agent sessions, allowing conversations
-// to be saved, loaded, listed and deleted across runs.
+// Package session 提供 agent 会话的持久化，允许对话跨运行保存、加载、列出和删除。
 package session
 
 import (
@@ -21,7 +20,7 @@ const (
 	sessionExt  = ".json"
 )
 
-// SessionMeta holds summary information about a session for listing purposes.
+// SessionMeta 保存会话的摘要信息，用于列表展示。
 type SessionMeta struct {
 	Id           int64  `json:"id"`
 	ProjectPath  string `json:"project_path"`
@@ -31,7 +30,7 @@ type SessionMeta struct {
 	UpdateTime   int64  `json:"update_time"`
 }
 
-// sessionFile is the on-disk format, embedding SessionMeta with full messages.
+// sessionFile 是磁盘存储格式，嵌入 SessionMeta 并包含完整消息。
 type sessionFile struct {
 	Id          int64             `json:"id"`
 	ProjectPath string            `json:"project_path"`
@@ -43,13 +42,13 @@ type sessionFile struct {
 	OtterState  *llm.OtterState   `json:"otter_state,omitempty"`
 }
 
-// getProjectSessionDir returns the session directory for the current project.
+// getProjectSessionDir 返回当前项目的会话目录。
 func getProjectSessionDir() string {
 	projectPath := utils.GetCurrentPath()
 	return filepath.Join(projectPath, ".orca", sessionsDir)
 }
 
-// getHomeSessionDir returns the session directory in user home.
+// getHomeSessionDir 返回用户主目录中的会话目录。
 func getHomeSessionDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -58,21 +57,20 @@ func getHomeSessionDir() string {
 	return filepath.Join(home, ".orca", sessionsDir)
 }
 
-// ensureDir creates the directory if it does not exist.
+// ensureDir 在目录不存在时创建它。
 func ensureDir(dir string) error {
 	return os.MkdirAll(dir, 0755)
 }
 
-// sessionPath returns the full path for a session file in the given directory.
-// The id is converted to a filename using base-10 encoding, ensuring no path
-// traversal is possible.
+// sessionPath 返回给定目录中会话文件的完整路径。
+// id 使用十进制转换为文件名，确保不可能进行路径穿越。
 func sessionPath(dir string, id int64) string {
-	// Use FormatInt which only produces digits, preventing path traversal
+	// 使用 FormatInt，它只产生数字，防止路径穿越。
 	filename := strconv.FormatInt(id, 10) + sessionExt
 	return filepath.Join(dir, filepath.Base(filename))
 }
 
-// Save persists a session to the project-level session directory.
+// Save 将会话持久化到项目级会话目录。
 func Save(s *agent.Session) error {
 	dir := getProjectSessionDir()
 	if err := ensureDir(dir); err != nil {
@@ -103,15 +101,15 @@ func Save(s *agent.Session) error {
 	return nil
 }
 
-// Load reads a session from either project or home directory.
-// Project sessions take priority over home sessions.
+// Load 从项目目录或主目录读取会话。
+// 项目会话优先于主目录会话。
 func Load(id int64) (*agent.Session, error) {
-	// Try project directory first
+	// 先尝试项目目录
 	if path := sessionPath(getProjectSessionDir(), id); utils.Exists(path) {
 		return loadFromFile(path)
 	}
 
-	// Try home directory
+	// 尝试主目录
 	if homeDir := getHomeSessionDir(); homeDir != "" {
 		if path := sessionPath(homeDir, id); utils.Exists(path) {
 			return loadFromFile(path)
@@ -121,7 +119,7 @@ func Load(id int64) (*agent.Session, error) {
 	return nil, fmt.Errorf("session %d not found", id)
 }
 
-// loadFromFile reads and parses a session from a file.
+// loadFromFile 从文件读取并解析会话。
 func loadFromFile(path string) (*agent.Session, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -147,13 +145,13 @@ func loadFromFile(path string) (*agent.Session, error) {
 	return session, nil
 }
 
-// List returns metadata for all sessions from both project and home directories.
-// Results are sorted by update time, most recent first.
+// List 返回项目目录和主目录中所有会话的元数据。
+// 结果按更新时间排序，最近的在前。
 func List() []SessionMeta {
 	var metas []SessionMeta
 	seen := make(map[int64]bool)
 
-	// Collect from project directory (higher priority)
+	// 从项目目录收集（较高优先级）
 	projectMetas := listFromDir(getProjectSessionDir())
 	for _, m := range projectMetas {
 		if !seen[m.Id] {
@@ -162,7 +160,7 @@ func List() []SessionMeta {
 		}
 	}
 
-	// Collect from home directory
+	// 从主目录收集
 	homeMetas := listFromDir(getHomeSessionDir())
 	for _, m := range homeMetas {
 		if !seen[m.Id] {
@@ -171,7 +169,7 @@ func List() []SessionMeta {
 		}
 	}
 
-	// Sort by update time, most recent first
+	// 按更新时间排序，最近的在前
 	sort.Slice(metas, func(i, j int) bool {
 		return metas[i].UpdateTime > metas[j].UpdateTime
 	})
@@ -179,13 +177,13 @@ func List() []SessionMeta {
 	return metas
 }
 
-// listFromDir reads all session files from a directory and returns their metadata.
+// listFromDir 从目录读取所有会话文件并返回其元数据。
 func listFromDir(dir string) []SessionMeta {
 	var metas []SessionMeta
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return metas // Directory doesn't exist or can't be read
+		return metas // 目录不存在或无法读取
 	}
 
 	for _, entry := range entries {
@@ -193,7 +191,7 @@ func listFromDir(dir string) []SessionMeta {
 			continue
 		}
 
-		// Validate filename is a valid session ID
+		// 验证文件名是有效的会话 ID
 		idStr := strings.TrimSuffix(entry.Name(), sessionExt)
 		if _, err := strconv.ParseInt(idStr, 10, 64); err != nil {
 			continue
@@ -223,11 +221,11 @@ func listFromDir(dir string) []SessionMeta {
 	return metas
 }
 
-// Delete removes a session from both project and home directories.
+// Delete 从项目目录和主目录中删除会话。
 func Delete(id int64) error {
 	var found bool
 
-	// Try project directory
+	// 尝试项目目录
 	if path := sessionPath(getProjectSessionDir(), id); utils.Exists(path) {
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("delete session from project: %w", err)
@@ -235,7 +233,7 @@ func Delete(id int64) error {
 		found = true
 	}
 
-	// Try home directory
+	// 尝试主目录
 	if homeDir := getHomeSessionDir(); homeDir != "" {
 		if path := sessionPath(homeDir, id); utils.Exists(path) {
 			if err := os.Remove(path); err != nil {
@@ -252,16 +250,16 @@ func Delete(id int64) error {
 	return nil
 }
 
-// DeleteAll removes all sessions from both project and home directories.
+// DeleteAll 从项目目录和主目录中删除所有会话。
 func DeleteAll() error {
 	var errs []string
 
-	// Clear project sessions
+	// 清除项目会话
 	if err := clearDir(getProjectSessionDir()); err != nil {
 		errs = append(errs, fmt.Sprintf("project: %v", err))
 	}
 
-	// Clear home sessions
+	// 清除主目录会话
 	if homeDir := getHomeSessionDir(); homeDir != "" {
 		if err := clearDir(homeDir); err != nil {
 			errs = append(errs, fmt.Sprintf("home: %v", err))
@@ -275,11 +273,11 @@ func DeleteAll() error {
 	return nil
 }
 
-// clearDir removes all session files from a directory.
+// clearDir 从目录中删除所有会话文件。
 func clearDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil // Directory doesn't exist, nothing to clear
+		return nil // 目录不存在，无需清除
 	}
 
 	for _, entry := range entries {

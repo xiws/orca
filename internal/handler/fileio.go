@@ -7,19 +7,17 @@ import (
 	"strings"
 )
 
-// File modes used when a target does not exist yet.
+// 目标不存在时使用的文件模式。
 const (
 	dirMode  = 0o755
 	fileMode = 0o644
 )
 
-// writeAll writes content to the resolved form of path and reports where the
-// bytes ended up.
+// writeAll 将内容写入 path 的解析形式，并报告字节最终位置。
 //
-// The bytes first land in a sibling temporary file which is then renamed over
-// the target, so a failing or interrupted write can never leave a half written
-// file behind. Parent directories are created as needed and an existing file
-// keeps its mode.
+// 字节先落入同级临时文件，然后重命名覆盖目标，
+// 因此失败或中断的写入不会留下半写文件。
+// 根据需要创建父目录，已有文件保留其模式。
 func writeAll(ws Workspace, path, content string) (string, error) {
 	resolved, err := ws.Resolve(path)
 	if err != nil {
@@ -58,7 +56,7 @@ func writeAll(ws Workspace, path, content string) (string, error) {
 	return resolved, nil
 }
 
-// readAll returns the content of path as a string.
+// readAll 将 path 的内容作为字符串返回。
 func readAll(ws Workspace, path string) (string, error) {
 	resolved, err := ws.Resolve(path)
 	if err != nil {
@@ -71,9 +69,8 @@ func readAll(ws Workspace, path string) (string, error) {
 	return string(data), nil
 }
 
-// splitLines breaks content into lines without their terminators. A trailing
-// newline does not produce an extra empty line, and a CR kept from a CRLF file
-// is dropped so line numbers stay readable.
+// splitLines 将内容拆分为不带终止行符的行。尾部换行不产生额外空行，
+// CRLF 文件中保留的 CR 会被丢弃，使行号保持可读。
 func splitLines(content string) []string {
 	if content == "" {
 		return nil

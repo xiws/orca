@@ -8,9 +8,8 @@ import (
 	"github.com/xiws/orca/internal/llm"
 )
 
-// assertCall checks one parsed call's name and arguments. Arguments are
-// compared as decoded JSON, since key order in the marshalled object is an
-// implementation detail.
+// assertCall 检查一个解析后调用的 name 和 arguments。参数以
+// 解码后的 JSON 进行比较，因为序列化对象中的键顺序是实现细节。
 func assertCall(t *testing.T, call llm.ToolCall, name, arguments string) {
 	t.Helper()
 	if call.Name != name {
@@ -28,8 +27,8 @@ func assertCall(t *testing.T, call llm.ToolCall, name, arguments string) {
 	}
 }
 
-// TestParseTextCallsPlainObject covers the documented shape: a command object
-// surrounded by the model's prose, followed by nothing else.
+// TestParseTextCallsPlainObject 覆盖文档化的形式：命令对象
+// 周围是模型的散文，后面没有其他内容。
 func TestParseTextCallsPlainObject(t *testing.T) {
 	content := "I will look at the file now.\n" +
 		`{"command": "read", "id": 3, "filename": "a.md", "start": 1}`
@@ -40,8 +39,8 @@ func TestParseTextCallsPlainObject(t *testing.T) {
 	assertCall(t, calls[0], "read", `{"id": 3, "filename": "a.md", "start": 1}`)
 }
 
-// TestParseTextCallsFencedArray covers several commands in one fenced JSON
-// block, the other shape ToolSchema documents.
+// TestParseTextCallsFencedArray 覆盖一个围栏 JSON 块中的多个命令，
+// 即 ToolSchema 文档记录的另一形式。
 func TestParseTextCallsFencedArray(t *testing.T) {
 	content := "Here is what I will run:\n```json\n[\n" +
 		`{"command":"read","data":{"filename":"a.md"}},` + "\n" +
@@ -54,8 +53,8 @@ func TestParseTextCallsFencedArray(t *testing.T) {
 	assertCall(t, calls[1], "bash", `{"data":{"content":"ls"}}`)
 }
 
-// TestParseTextCallsBraceInsideArgument checks the scanner honours string
-// literals: braces inside a content argument must not cut the command short.
+// TestParseTextCallsBraceInsideArgument 检查扫描器尊重字符串字面量：
+// content 参数内的花括号不会截断命令。
 func TestParseTextCallsBraceInsideArgument(t *testing.T) {
 	content := `{"command":"write","data":{"filename":"main.go","content":"func main() {}"}}`
 	calls := ParseTextCalls(content)
@@ -65,8 +64,8 @@ func TestParseTextCallsBraceInsideArgument(t *testing.T) {
 	assertCall(t, calls[0], "write", `{"data":{"filename":"main.go","content":"func main() {}"}}`)
 }
 
-// TestParseTextCallsNormalizesCommandName mirrors Parse: the name is matched
-// case-insensitively and travels lowercased.
+// TestParseTextCallsNormalizesCommandName 与 Parse 一致：名称以
+// 不区分大小写的方式匹配，并以小写形式传递。
 func TestParseTextCallsNormalizesCommandName(t *testing.T) {
 	content := `{"command": " READ ", "filename": "a.md"}`
 	calls := ParseTextCalls(content)
@@ -76,9 +75,8 @@ func TestParseTextCallsNormalizesCommandName(t *testing.T) {
 	assertCall(t, calls[0], "read", `{"filename":"a.md"}`)
 }
 
-// TestParseTextCallsIgnoresNonCommands keeps prose and examples safe: only
-// objects naming a known command count, and a malformed one is skipped rather
-// than failing the whole scan.
+// TestParseTextCallsIgnoresNonCommands 保持散文和示例安全：只有
+// 命名已知命令的对象才算，格式错误的对象会被跳过而不是让整个扫描失败。
 func TestParseTextCallsIgnoresNonCommands(t *testing.T) {
 	content := "An envelope looks like this:\n" +
 		`{"command": "teleport", "target": "moon"}` + "\n" +
@@ -90,9 +88,8 @@ func TestParseTextCallsIgnoresNonCommands(t *testing.T) {
 	}
 }
 
-// TestParseTextCallsSkipsNestedExamples makes sure a command object nested
-// inside a larger JSON value is treated as an example, not as a call: the
-// outer value is scanned once and the inner one never separately.
+// TestParseTextCallsSkipsNestedExamples 确保嵌套在更大 JSON 值内的
+// 命令对象被视为示例而非调用：外层值只扫描一次，内层不会单独扫描。
 func TestParseTextCallsSkipsNestedExamples(t *testing.T) {
 	content := `{"note": "the protocol in one line", "example": {"command": "bash", "data": {"content": "rm -rf /"}}}`
 	calls := ParseTextCalls(content)

@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// TestEndpointTrimsTrailingSlash pins the URL the client would POST to: a base
-// URL carrying a trailing slash must be trimmed, and every provider is expected
-// to be reached under the fixed /chat/completions route.
+// TestEndpointTrimsTrailingSlash 固定客户端会 POST 到的 URL：
+// 带尾部斜杠的 base URL 必须被裁剪，每个 provider 都应通过固定的 /chat/completions 路由访问。
 func TestEndpointTrimsTrailingSlash(t *testing.T) {
 	tests := []struct {
 		name string
@@ -42,8 +41,8 @@ func TestEndpointTrimsTrailingSlash(t *testing.T) {
 	}
 }
 
-// TestEndpointReachesCompletionsRoute checks the live side: the request is sent
-// to the expected path with an upstream built by the constructor.
+// TestEndpointReachesCompletionsRoute 检查实际端：
+// 请求发送到构造器构建的上游的预期路径。
 func TestEndpointReachesCompletionsRoute(t *testing.T) {
 	type captured struct {
 		method string
@@ -67,8 +66,8 @@ data: [DONE]` + "}"))
 	}
 }
 
-// TestEndpointDoesNotAttachToolsWhenUnsupported re-checks the request side with
-// the upstream verifying it received no tool declarations.
+// TestEndpointDoesNotAttachToolsWhenUnsupported 重新检查请求端，
+// 验证上游未收到工具声明。
 func TestEndpointDoesNotAttachToolsWhenUnsupported(t *testing.T) {
 	var sawTools bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,9 +92,8 @@ data: [DONE]`))
 	}
 }
 
-// TestSSEDataExtractsPayloads verifies the SSE helper: a usable data line is
-// returned trimmed, while blank, non-data and empty-data lines are reported as
-// carrying no data.
+// TestSSEDataExtractsPayloads 验证 SSE 辅助函数：
+// 可用的 data 行返回裁剪后的内容，而空行、非 data 行和空 data 行报告为无数据。
 func TestSSEDataExtractsPayloads(t *testing.T) {
 	tests := []struct {
 		name string
@@ -121,9 +119,8 @@ func TestSSEDataExtractsPayloads(t *testing.T) {
 	}
 }
 
-// TestWireMessageDropsEmptyMessages confirms the conversion rules: a message
-// carrying no useful content is filtered out, while an assistant turn that only
-// carries tool calls is kept even when its content is empty.
+// TestWireMessageDropsEmptyMessages 确认转换规则：
+// 不携带有用内容的消息被过滤，而仅携带工具调用的助手轮次即使内容为空也保留。
 func TestWireMessageDropsEmptyMessages(t *testing.T) {
 	if msg, ok := wireMessage(ChatMessage{Role: RoleUser, Content: "hi"}); !ok || msg.Content != "hi" {
 		t.Errorf("wireMessage(user) = (%+v, %v), want (content:hi, true)", msg, ok)
@@ -132,15 +129,15 @@ func TestWireMessageDropsEmptyMessages(t *testing.T) {
 		t.Error("wireMessage(empty) should be dropped")
 	}
 
-	// An empty-content assistant turn that carries tool calls is kept.
+	// 内容为空但携带工具调用的助手轮次被保留。
 	var assistants = ChatMessage{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call-1", Name: ToolRead}}}
 	if msg, ok := wireMessage(assistants); !ok || len(msg.ToolCalls) != 1 || msg.ToolCallID != "" {
 		t.Errorf("wireMessage(tool assistant) = (%+v, %v), want a kept message with one tool call", msg, ok)
 	}
 }
 
-// TestWireMessageTranslatesToolCalls checks each tool call is rewritten into the
-// OpenAI shape, using the constant tool type and preserving name and arguments.
+// TestWireMessageTranslatesToolCalls 检查每个工具调用被重写为 OpenAI 形式，
+// 使用固定 tool type 并保留 name 和 arguments。
 func TestWireMessageTranslatesToolCalls(t *testing.T) {
 	message, ok := wireMessage(ChatMessage{
 		Role:       RoleAssistant,

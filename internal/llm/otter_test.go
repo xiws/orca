@@ -9,8 +9,8 @@ import (
 	"github.com/xiws/otter/pkg/provider"
 )
 
-// fakeOtterBackend records the requests it is handed and replays a scripted
-// stream per call, so the adapter can be driven without an otter platform.
+// fakeOtterBackend 记录接收到的请求并为每次调用重放脚本化的流，
+// 使适配器可以在没有 otter 平台的情况下被驱动。
 type fakeOtterBackend struct {
 	requests []*provider.SendRequest
 	replies  [][]provider.StreamEvent
@@ -33,9 +33,9 @@ func (f *fakeOtterBackend) SendStream(_ context.Context, req *provider.SendReque
 	return events, nil
 }
 
-// fakeRemoteBackend adds the server-side session creation the DeepSeek-style
-// platforms need; a plain fakeOtterBackend does not satisfy the capability
-// assertion, which is exactly what the ChatGPT/Gemini-shaped tests want.
+// fakeRemoteBackend 添加了 DeepSeek 风格平台需要的服务端会话创建；
+// 普通的 fakeOtterBackend 不满足该能力断言，
+// 这正是 ChatGPT/Gemini 形式的测试所需的。
 type fakeRemoteBackend struct {
 	fakeOtterBackend
 	remoteID  string
@@ -47,16 +47,14 @@ func (f *fakeRemoteBackend) CreateRemoteSession(context.Context) (string, error)
 	return f.remoteID, nil
 }
 
-// newFakeOtterRequester wires a requester against fake, bypassing the config
-// and login machinery the real builder runs.
+// newFakeOtterRequester 将 requester 接入 fake，绕过真实构建器运行的配置和登录逻辑。
 func newFakeOtterRequester(fake otterBackend) *otterRequester {
 	return newOtterRequester(ModelInfo{Provider: "otter", API: APIOtter, ModelID: "deepseek"}, func(string) (otterBackend, error) {
 		return fake, nil
 	})
 }
 
-// drain collects what the requester streamed to msgs and reports it as one
-// string.
+// drain 收集 requester 流式传输到 msgs 的内容并报告为一个字符串。
 func drain(msgs chan string) string {
 	close(msgs)
 	var out strings.Builder
@@ -66,9 +64,9 @@ func drain(msgs chan string) string {
 	return out.String()
 }
 
-// TestOtterRequesterFirstRequestSendsSystemAndUser drives the first call: the
-// platform session is created server side, the prompt joins the system
-// context and the user turn, and the reply streams back into msgs.
+// TestOtterRequesterFirstRequestSendsSystemAndUser 驱动首次调用：
+// 平台会话在服务端创建，提示拼接系统上下文和用户轮次，
+// 回复流式回传到 msgs。
 func TestOtterRequesterFirstRequestSendsSystemAndUser(t *testing.T) {
 	fake := &fakeRemoteBackend{remoteID: "chat-1"}
 	fake.replies = [][]provider.StreamEvent{
@@ -114,9 +112,9 @@ func TestOtterRequesterFirstRequestSendsSystemAndUser(t *testing.T) {
 	}
 }
 
-// TestOtterRequesterFollowUpSendsToolResultsOnly checks the increment: by the
-// second call the system context and the user turn are already on the
-// platform, so only the tool result goes out, quoting the previous reply id.
+// TestOtterRequesterFollowUpSendsToolResultsOnly 检查增量：
+// 第二次调用时系统上下文和用户轮次已在平台上，
+// 因此只发送工具结果，引用上一次回复 id。
 func TestOtterRequesterFollowUpSendsToolResultsOnly(t *testing.T) {
 	fake := &fakeRemoteBackend{remoteID: "chat-1"}
 	fake.replies = [][]provider.StreamEvent{
@@ -161,9 +159,8 @@ func TestOtterRequesterFollowUpSendsToolResultsOnly(t *testing.T) {
 	}
 }
 
-// TestOtterRequesterStringFollowUpKeepsConversation checks the ChatGPT/Gemini
-// shape: no server-side session creation, and the conversation id plus reply
-// id reported by the done event travel into the next request.
+// TestOtterRequesterStringFollowUpKeepsConversation 检查 ChatGPT/Gemini 形式：
+// 无服务端会话创建，done 事件报告的对话 id 和回复 id 传入下一次请求。
 func TestOtterRequesterStringFollowUpKeepsConversation(t *testing.T) {
 	fake := &fakeOtterBackend{replies: [][]provider.StreamEvent{
 		{
@@ -197,9 +194,8 @@ func TestOtterRequesterStringFollowUpKeepsConversation(t *testing.T) {
 	}
 }
 
-// TestOtterRequesterErrorEventFailsRequestAndKeepsTail makes sure a stream
-// that reports an error fails the request without advancing the delivered
-// mark, so a caller that retries resends the same tail.
+// TestOtterRequesterErrorEventFailsRequestAndKeepsTail 确保流中报告的错误
+// 会使请求失败而不推进已发送标记，因此重试的调用方重新发送相同的尾部。
 func TestOtterRequesterErrorEventFailsRequestAndKeepsTail(t *testing.T) {
 	fake := &fakeOtterBackend{replies: [][]provider.StreamEvent{
 		{{Type: "error", Err: errors.New("auth expired")}},
@@ -223,8 +219,8 @@ func TestOtterRequesterErrorEventFailsRequestAndKeepsTail(t *testing.T) {
 	}
 }
 
-// TestOtterRequesterRejectsEmptyTail covers a request with nothing new to
-// send, which would otherwise post an empty message to the platform.
+// TestOtterRequesterRejectsEmptyTail 覆盖没有新消息可发送的请求，
+// 否则会向平台发送空消息。
 func TestOtterRequesterRejectsEmptyTail(t *testing.T) {
 	requester := newFakeOtterRequester(&fakeOtterBackend{})
 	result := requester.Request(nil, nil)
@@ -236,8 +232,7 @@ func TestOtterRequesterRejectsEmptyTail(t *testing.T) {
 	}
 }
 
-// TestBuildOtterBackendRejectsUnknownPlatform checks a model id the otter
-// platforms do not know is rejected by name.
+// TestBuildOtterBackendRejectsUnknownPlatform 检查 otter 平台不认识的模型 id 被按名拒绝。
 func TestBuildOtterBackendRejectsUnknownPlatform(t *testing.T) {
 	_, err := buildOtterBackend("no-such-platform")
 	if err == nil {

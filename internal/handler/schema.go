@@ -5,9 +5,8 @@ import (
 	"strings"
 )
 
-// ToolPrompt returns the description of the command protocol for the tool part
-// of a prompt. It is generated from the same constants the parser accepts, so
-// the model is never told about a command that cannot run.
+// ToolPrompt 返回工具提示词中命令协议的描述。
+// 它由解析器接受的相同常量生成，因此模型永远不会被告知无法运行的命令。
 func ToolPrompt() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "You can act on the workspace by replying with one or more of these JSON commands: %s.\n",
@@ -21,8 +20,7 @@ func ToolPrompt() string {
 	return out.String()
 }
 
-// ToolSchema documents the accepted shape of every command. Parameters may be
-// placed next to "command" or nested in "data".
+// ToolSchema 文档记录每个命令的接受形式。参数可以放在 "command" 旁边或嵌套在 "data" 中。
 const ToolSchema = `
 { "command": "read",  "id": 1, "filename": "/abs/or/relative/path", "start": 1, "end": 200 }
     Returns the line range with 1 based line numbers. Omit start and end for the whole file.

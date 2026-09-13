@@ -1,4 +1,4 @@
-// Package command provides synchronous command registration and dispatch.
+// Package command 提供同步命令注册和分发。
 package command
 
 import (
@@ -15,34 +15,34 @@ var (
 	ErrCommandNotFound   = errors.New("command name is not registered")
 )
 
-// CommandOption describes a command registration and execution parameter.
+// CommandOption 描述命令的注册和执行参数。
 type CommandOption interface {
 	GetId() int64
 	GetName() string
 }
 
-// Command executes a command parameter and returns its result.
+// Command 执行命令参数并返回其结果。
 type Command interface {
 	Execute(cmd CommandOption) (error, any)
 }
 
-// CommandHandler handles a command parameter and returns its result.
+// CommandHandler 处理命令参数并返回其结果。
 type CommandHandler interface {
 	Handle(cmd CommandOption) (error, any)
 }
 
-// CommandHandle stores command handlers keyed by command name.
+// CommandHandle 存储按命令名键控的命令处理器。
 type CommandHandle struct {
 	mu       sync.RWMutex
 	handlers map[string]CommandHandler
 }
 
-// NewCommandHandle creates an empty command registry.
+// NewCommandHandle 创建一个空的命令注册表。
 func NewCommandHandle() *CommandHandle {
 	return &CommandHandle{handlers: make(map[string]CommandHandler)}
 }
 
-// Register adds a handler for the command option's name.
+// Register 为命令选项的名称添加处理器。
 func (t *CommandHandle) Register(option CommandOption, handler CommandHandler) error {
 	if isNil(option) {
 		return ErrNilCommandOption
@@ -65,7 +65,7 @@ func (t *CommandHandle) Register(option CommandOption, handler CommandHandler) e
 	return nil
 }
 
-// Execute dispatches a command synchronously to the handler registered for its name.
+// Execute 将命令同步分发到为其名称注册的处理器。
 func (t *CommandHandle) Execute(cmd CommandOption) (error, any) {
 	if isNil(cmd) {
 		return ErrNilCommandParam, nil

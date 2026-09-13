@@ -10,15 +10,15 @@ import (
 	"github.com/zbysir/hunkpatch"
 )
 
-// EditHandler serves the edit command.
+// EditHandler 服务 edit 命令。
 type EditHandler struct {
 	Workspace
 }
 
-// Handle applies the fragments of an edit command one after another.
+// Handle 逐个应用 edit 命令的片段。
 //
-// The whole result is computed in memory first, so a fragment that cannot be
-// located fails the command without touching the file.
+// 整个结果先在内存中计算，因此无法定位的片段会使命令失败
+// 而不触及文件。
 func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 	opt, ok := cmd.(*EditOption)
 	if !ok {
@@ -66,7 +66,7 @@ func (t EditHandler) edit(opt *EditOption) (string, error) {
 		resolved, strings.Join(summaries, ", "), len(splitLines(original)), len(splitLines(updated))), nil
 }
 
-// buildMeta returns the contextual description for an edit operation.
+// buildMeta 返回 edit 操作的上下文描述。
 func (t EditHandler) buildMeta(opt *EditOption) string {
 	if opt == nil || len(opt.Contents) == 0 {
 		return "0 fragments"
@@ -74,9 +74,8 @@ func (t EditHandler) buildMeta(opt *EditOption) string {
 	return fmt.Sprintf("%d fragment(s)", len(opt.Contents))
 }
 
-// applyFragment applies one replacement to content and returns the new content
-// plus a one line summary. index is the 1 based position of the fragment, used
-// to point failures at the right entry.
+// applyFragment 将单个替换应用到 content，返回新内容和单行摘要。
+// index 是片段的 1 起始位置，用于指向失败的条目。
 func applyFragment(content string, index int, fragment EditFragment) (string, string, error) {
 	if fragment.Diff == "" {
 		return "", "", fmt.Errorf("%w: fragment %d", ErrFragmentLocator, index)
@@ -84,9 +83,8 @@ func applyFragment(content string, index int, fragment EditFragment) (string, st
 	return applyDiffFragment(content, index, fragment)
 }
 
-// applyDiffFragment applies a unified diff to content using hunkpatch's fuzzy
-// matching algorithm, which tolerates incorrect line numbers and approximate
-// surrounding context — exactly what language models produce.
+// applyDiffFragment 使用 hunkpatch 的模糊匹配算法将统一 diff 应用到 content，
+// 容忍不正确的行号和近似的上下文——正是语言模型产生的内容。
 func applyDiffFragment(content string, index int, fragment EditFragment) (string, string, error) {
 	opts := hunkpatch.Options{IndentTolerant: true}
 	result, err := hunkpatch.ApplyWith(content, fragment.Diff, opts)

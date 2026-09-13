@@ -1,7 +1,6 @@
-// Package handler implements the tool commands the agent can invoke: read,
-// write, edit and bash. Every handler satisfies command.CommandHandler and
-// reports business outcomes through CommandResult, keeping the error channel of
-// the registry free for framework level failures.
+// Package handler 实现 agent 可调用的工具命令：read、write、edit 和 bash。
+// 每个处理器都满足 command.CommandHandler 接口，并通过 CommandResult
+// 报告业务结果，将注册表的 error 通道留给框架级故障。
 package handler
 
 import (
@@ -13,8 +12,8 @@ import (
 	"github.com/xiws/orca/pkg/command"
 )
 
-// Names of the built-in tool commands. They are the routing names used by the
-// command registry and the value of the "command" field on the wire protocol.
+// 内置工具命令的名称。它们是命令注册表使用的路由名称，
+// 也是线路协议中 "command" 字段的值。
 const (
 	CommandRead       = "read"
 	CommandWrite      = "write"
@@ -24,35 +23,31 @@ const (
 )
 
 var (
-	// ErrUnsupportedOption is returned when a handler is dispatched an option
-	// of a type it cannot process.
+	// ErrUnsupportedOption 在处理器被分发到无法处理的 option 类型时返回。
 	ErrUnsupportedOption = errors.New("unsupported command option")
-	// ErrEmptyFilename is returned when a file command carries no filename.
+	// ErrEmptyFilename 在文件命令未携带文件名时返回。
 	ErrEmptyFilename = errors.New("filename is required")
-	// ErrEmptyCommand is returned when a bash command carries no command line.
+	// ErrEmptyCommand 在 bash 命令未携带命令行时返回。
 	ErrEmptyCommand = errors.New("command is required")
-	// ErrEmptyContents is returned when an edit command has no fragments.
+	// ErrEmptyContents 在 edit 命令没有片段时返回。
 	ErrEmptyContents = errors.New("edit contents is empty")
-	// ErrOutsideWorkspace is returned when a path resolves outside the allowed
-	// root directory.
+	// ErrOutsideWorkspace 在路径解析到允许的根目录之外时返回。
 	ErrOutsideWorkspace = errors.New("path is outside the workspace")
-	// ErrFragmentLocator is returned when an edit fragment carries no diff.
+	// ErrFragmentLocator 在 edit 片段未携带 diff 时返回。
 	ErrFragmentLocator = errors.New("fragment needs a diff")
 )
 
-// CommandResult is the uniform result of a command execution. It is the value
-// returned in the second slot of CommandHandler.Handle and is serialized back to
-// the model, so a failure is data rather than a Go error.
+// CommandResult 是命令执行的统一结果。它是 CommandHandler.Handle
+// 第二个返回值位置的值，会被序列化回模型，因此失败是数据而非 Go error。
 type CommandResult struct {
-	// Id correlates the result with the invocation that produced it, matching
-	// the id the call carried.
+	// Id 将结果与产生它的调用关联，匹配调用携带的 id。
 	Id      int64  `json:"id"`
 	Command string `json:"command"`
 	OK      bool   `json:"ok"`
-	// Content carries the command payload: file contents for read, merged
-	// stdout and stderr for bash, a change summary for write and edit.
+	// Content 携带命令负载：read 的文件内容、bash 的合并 stdout 和 stderr、
+	// write 和 edit 的变更摘要。
 	Content string `json:"content,omitempty"`
-	// Err holds a short reason and is empty when OK is true.
+	// Err 持有简短原因，OK 为 true 时为空。
 	Err        string         `json:"err,omitempty"`
 	TaskTarget []TaskBaseInfo `json:"task_target,omitempty"`
 }
@@ -69,21 +64,20 @@ func (u CommandResult) String() string {
 	return fmt.Sprintf("task id:%d \ncommand:%s\nfailed:%s", u.Id, u.Command, u.Err)
 }
 
-// JSON renders the result the way it travels to the model: one structured
-// object per tool call, carrying its identity, its outcome and, on failure, the
-// reason. The model reads it as data and can act on ok:false without the
-// runtime having to treat a business failure as a fatal error.
+// JSON 以结果传递到模型的方式渲染：每个工具调用一个结构化对象，
+// 携带其身份、结果，以及失败时的原因。模型将其作为数据读取，
+// 可以处理 ok:false 而无需运行时将业务失败视为致命错误。
 func (u CommandResult) JSON() string {
 	data, err := json.Marshal(u)
 	if err != nil {
-		// The struct holds plain values, so this cannot realistically fail.
+		// 结构体只持有纯值，实际上不可能失败。
 		return fmt.Sprintf(`{"ok":false,"command":%q,"err":%q}`, u.Command, err.Error())
 	}
 	return string(data)
 }
 
-// NewResult builds a CommandResult for the given identity. A non-nil err marks
-// the result as failed and puts its message into Err.
+// NewResult 为给定身份构建 CommandResult。非 nil 的 err 将结果标记为失败，
+// 并将其消息放入 Err。
 func NewResult(id int64, name, content string, err error) CommandResult {
 	result := CommandResult{Id: id, Command: name, Content: content, OK: err == nil}
 	if err != nil {
@@ -92,9 +86,8 @@ func NewResult(id int64, name, content string, err error) CommandResult {
 	return result
 }
 
-// ResultFor builds a CommandResult for a command option, so handlers only need
-// to produce a payload and an error. Options built in code without an id still
-// get one, keeping every result correlatable with a call.
+// ResultFor 为命令选项构建 CommandResult，因此处理器只需产生负载和错误。
+// 在代码中构建的没有 id 的选项仍会获得一个，保持每个结果可与调用关联。
 func ResultFor(cmd command.CommandOption, content string, err error) CommandResult {
 	id := cmd.GetId()
 	if id == 0 {
@@ -103,8 +96,7 @@ func ResultFor(cmd command.CommandOption, content string, err error) CommandResu
 	return NewResult(id, cmd.GetName(), content, err)
 }
 
-// Register adds handlers for every built-in tool command to handle, scoping
-// file access to ws.
+// Register 为每个内置工具命令向 handle 添加处理器，将文件访问限定在 ws 范围内。
 func Register(handle *command.CommandHandle, ws Workspace) error {
 	entries := []struct {
 		option  command.CommandOption

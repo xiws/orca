@@ -11,50 +11,48 @@ import (
 	"github.com/xiws/otter/pkg/provider"
 )
 
-// otterConfigPath is where the otter CLI keeps its credentials. The adapter
-// reads and refreshes that same file, so one login serves both tools.
+// otterConfigPath 是 otter CLI 保存凭据的位置。适配器
+// 读取并刷新同一个文件，因此一次登录可同时服务两个工具。
 const otterConfigPath = "~/.otter/config.json"
 
-// otterRequestTimeout bounds one platform request; otterLoginTimeout bounds
-// the platform-side session creation and the account/password login.
+// otterRequestTimeout 限制单次平台请求；otterLoginTimeout 限制
+// 平台侧会话创建和账号密码登录。
 const (
 	otterRequestTimeout = 5 * time.Minute
 	otterLoginTimeout   = 30 * time.Second
 )
 
-// otterBackend is the slice of otter's platform provider the requester builds
-// on. Declaring it here keeps the adapter replaceable by a fake in tests.
+// otterBackend 是 requester 构建其上的 otter 平台 provider 切片。
+// 在此声明使适配器在测试中可被 fake 替换。
 type otterBackend interface {
 	Name() string
 	SendStream(ctx context.Context, req *provider.SendRequest) (<-chan provider.StreamEvent, error)
 }
 
-// otterBackendBuilder resolves the otter platform named by a model id.
+// otterBackendBuilder 解析模型 id 指定的 otter 平台。
 type otterBackendBuilder func(platform string) (otterBackend, error)
 
-// otterRemoteSession is the slice of otter's provider.RemoteSessionProvider
-// the adapter needs: platforms such as DeepSeek create their conversation
-// server side and hand back its id. Declared here (narrower than otter's
-// interface, which also carries SessionURL) so a fake can satisfy it.
+// otterRemoteSession 是适配器需要的 otter provider.RemoteSessionProvider 切片：
+// DeepSeek 等平台在服务端创建对话并返回其 id。
+// 在此声明（比 otter 的接口更窄，后者还携带 SessionURL），
+// 以便 fake 可以实现它。
 type otterRemoteSession interface {
 	CreateRemoteSession(ctx context.Context) (string, error)
 }
 
-// otterRequester adapts an otter platform provider to the Requester interface.
+// otterRequester 将 otter 平台 provider 适配为 Requester 接口。
 //
-// An otter platform is a stateful conversation on the provider's side: the
-// platform remembers the history itself and every follow-up must quote the
-// previous reply's id(s). The adapter therefore keeps the orca conversation
-// and the platform session in step — it tracks how many messages have been
-// delivered and sends only the new tail: the system context and the user turn
-// on the first call, the tool results afterwards.
+// otter 平台是 provider 侧的有状态对话：平台自己记住历史，
+// 每次后续请求必须引用上一次回复的 id。因此适配器保持 orca 对话
+// 与平台会话同步——它跟踪已发送多少条消息，
+// 只发送新的尾部：首次调用时发送系统上下文和用户轮次，
+// 之后发送工具结果。
 type otterRequester struct {
 	info    ModelInfo
 	build   otterBackendBuilder
 	backend otterBackend
-	// remote is set for platforms that create their session server side, such
-	// as DeepSeek; ChatGPT and Gemini build the conversation with the first
-	// message and need none.
+	// remote 为在服务端创建会话的平台设置，如 DeepSeek；
+	// ChatGPT 和 Gemini 用第一条消息构建对话，不需要此字段。
 	remote otterRemoteSession
 
 	delivered int
@@ -65,9 +63,8 @@ type otterRequester struct {
 	remoteMetadata     map[string]string
 }
 
-// otterMeta is the platform state one streamed reply reports back. It is
-// applied to the requester only once the whole stream succeeded, so a failed
-// request leaves the session where it was.
+// otterMeta 是单次流式回复报告回传的平台状态。
+// 仅当整个流成功后才应用到 requester，因此失败的请求不会推进会话状态。
 type otterMeta struct {
 	chatSessionID      string
 	parentMessageID    int
@@ -76,9 +73,9 @@ type otterMeta struct {
 	tokenUsage         int
 }
 
-// OtterState captures the platform-side conversation state an otterRequester
-// holds. It is persisted in the orca session so a resumed process picks up
-// the same remote session instead of creating a new one.
+// OtterState 捕获 otterRequester 持有的平台侧对话状态。
+// 它持久化在 orca 会话中，使恢复的进程能接续同一个远程会话，
+// 而不是创建新会话。
 type OtterState struct {
 	ChatSessionID      string            `json:"chat_session_id,omitempty"`
 	ParentMessageID    int               `json:"parent_message_id,omitempty"`
@@ -87,8 +84,8 @@ type OtterState struct {
 	Delivered          int               `json:"delivered"`
 }
 
-// apply merges one event of the reply into the meta. Missing fields keep their
-// previous value, since a platform may report them only once.
+// apply 将回复的一个事件合并到 meta 中。缺失字段保留其先前值，
+// 因为平台可能只报告一次。
 func (m *otterMeta) apply(event provider.StreamEvent) {
 	if event.ResponseMessageID != 0 {
 		m.parentMessageID = event.ResponseMessageID
@@ -113,21 +110,20 @@ func (m *otterMeta) apply(event provider.StreamEvent) {
 	}
 }
 
-// NewOtterRequester builds the Requester for a model served by an otter
-// platform. The model id names the platform: deepseek, chatgpt or gemini.
+// NewOtterRequester 为 otter 平台服务的模型构建 Requester。
+// 模型 id 指定平台名称：deepseek、chatgpt 或 gemini。
 func NewOtterRequester(info ModelInfo) Requester {
 	return newOtterRequester(info, buildOtterBackend)
 }
 
-// newOtterRequester is the seam tests use to install a fake backend.
+// newOtterRequester 是测试安装 fake 后端的接口。
 func newOtterRequester(info ModelInfo, build otterBackendBuilder) *otterRequester {
 	return &otterRequester{info: info, build: build}
 }
 
-// Request sends the undelivered tail of the conversation to the platform and
-// streams the reply back. On success the state the reply reported is committed
-// and the tail counts as delivered; on any failure nothing advances, so a
-// caller that retries resends the same tail.
+// Request 将对话中未发送的尾部发送到平台并流式回传回复。
+// 成功时提交回复报告的状态，尾部计为已发送；
+// 任何失败都不会推进状态，因此重试的调用方会重新发送相同的尾部。
 func (o *otterRequester) Request(prompts []ChatMessage, msgs chan<- string) Result {
 	var result Result
 
@@ -178,7 +174,7 @@ func (o *otterRequester) Request(prompts []ChatMessage, msgs chan<- string) Resu
 			}
 			return result
 		default:
-			// "meta" and "done" carry the ids the next round must quote.
+			// "meta" 和 "done" 携带下一轮必须引用的 id。
 			meta.apply(event)
 		}
 	}
@@ -190,9 +186,8 @@ func (o *otterRequester) Request(prompts []ChatMessage, msgs chan<- string) Resu
 	return result
 }
 
-// pendingPrompt renders the messages the platform has not seen yet. Assistant
-// turns are skipped because the platform session already holds everything the
-// model said; resending them would duplicate the conversation.
+// pendingPrompt 渲染平台尚未看到的消息。助手轮次被跳过，
+// 因为平台会话已包含模型说过的所有内容；重新发送会重复对话。
 func (o *otterRequester) pendingPrompt(prompts []ChatMessage) string {
 	if o.delivered >= len(prompts) {
 		return ""
@@ -220,8 +215,8 @@ func (o *otterRequester) pendingPrompt(prompts []ChatMessage) string {
 	return out.String()
 }
 
-// toolResultSegment renders one tool answer, naming the call it answers so the
-// model can tell the results of one turn apart.
+// toolResultSegment 渲染一个工具回复，命名其回复的调用，
+// 使模型能区分不同轮次的结果。
 func toolResultSegment(prompts []ChatMessage, index int) string {
 	message := prompts[index]
 	name := toolCallName(prompts, index, message.ToolCallID)
@@ -231,8 +226,8 @@ func toolResultSegment(prompts []ChatMessage, index int) string {
 	return fmt.Sprintf("Tool result for %s:\n%s", name, message.Content)
 }
 
-// toolCallName finds the name of the call callID answers, looking back at the
-// assistant turns of the conversation.
+// toolCallName 查找 callID 回复的调用名称，
+// 回溯对话的助手轮次。
 func toolCallName(prompts []ChatMessage, before int, callID string) string {
 	if callID == "" {
 		return ""
@@ -250,9 +245,9 @@ func toolCallName(prompts []ChatMessage, before int, callID string) string {
 	return ""
 }
 
-// ensureBackend builds the platform provider once per requester. Building it
-// may log in, so it happens on the first Request where a failure has a Result
-// to travel in, not at construction.
+// ensureBackend 在每个 requester 中构建一次平台 provider。
+// 构建时可能登录，因此在首次 Request 时发生（此时失败有 Result 可承载），
+// 而不是在构造时。
 func (o *otterRequester) ensureBackend() (otterBackend, error) {
 	if o.backend != nil {
 		return o.backend, nil
@@ -268,8 +263,7 @@ func (o *otterRequester) ensureBackend() (otterBackend, error) {
 	return backend, nil
 }
 
-// ensureRemoteSession creates the platform-side session on the first call for
-// platforms whose session ids are generated server side.
+// ensureRemoteSession 为会话 id 在服务端生成的平台在首次调用时创建平台侧会话。
 func (o *otterRequester) ensureRemoteSession() error {
 	if o.remote == nil || o.chatSessionID != "" {
 		return nil
@@ -285,7 +279,7 @@ func (o *otterRequester) ensureRemoteSession() error {
 	return nil
 }
 
-// State returns a snapshot of the current platform state for persistence.
+// State 返回当前平台状态的快照，用于持久化。
 func (o *otterRequester) State() OtterState {
 	return OtterState{
 		ChatSessionID:      o.chatSessionID,
@@ -296,8 +290,8 @@ func (o *otterRequester) State() OtterState {
 	}
 }
 
-// RestoreState rehydrates the requester from a previously saved state,
-// so a resumed process continues the same platform conversation.
+// RestoreState 从之前保存的状态恢复 requester，
+// 使恢复的进程继续同一个平台对话。
 func (o *otterRequester) RestoreState(s OtterState) {
 	o.chatSessionID = s.ChatSessionID
 	o.parentMessageID = s.ParentMessageID
@@ -306,8 +300,8 @@ func (o *otterRequester) RestoreState(s OtterState) {
 	o.delivered = s.Delivered
 }
 
-// commit records what the finished reply reported: the ids the next follow-up
-// must quote and the tail length that now counts as delivered.
+// commit 记录已完成的回复报告的内容：下一次后续必须引用的 id，
+// 以及现在计为已发送的尾部长度。
 func (o *otterRequester) commit(meta otterMeta, delivered int) {
 	if meta.chatSessionID != "" {
 		o.chatSessionID = meta.chatSessionID
@@ -327,9 +321,8 @@ func (o *otterRequester) commit(meta otterMeta, delivered int) {
 	o.delivered = delivered
 }
 
-// buildOtterBackend constructs the otter platform provider named by a model
-// id. Credentials are initialised exactly the way the otter CLI does, so a
-// login performed with either tool serves both.
+// buildOtterBackend 构建模型 id 指定的 otter 平台 provider。
+// 凭据的初始化方式与 otter CLI 完全一致，因此用任一工具执行的登录可同时服务两者。
 func buildOtterBackend(platform string) (otterBackend, error) {
 	configPath := config.ResolvePath(otterConfigPath)
 	appConfig, err := config.Load(configPath)
@@ -357,9 +350,9 @@ func buildOtterBackend(platform string) (otterBackend, error) {
 	}
 }
 
-// initOtterDeepSeek wires DeepSeek credentials in the order the otter CLI
-// uses: an env token first, then the saved token, then an account/password
-// login whose fresh token is written back so both tools stay logged in.
+// initOtterDeepSeek 按 otter CLI 的顺序接入 DeepSeek 凭据：
+// 先环境变量 token，再保存的 token，最后是账号密码登录，
+// 登录后的新 token 写回配置文件，使两个工具保持登录状态。
 func initOtterDeepSeek(ds *provider.DeepSeekProvider, appConfig *config.Config, configPath string) error {
 	if token := os.Getenv("OTTER_DEEPSEEK_AUTH_TOKEN"); token != "" {
 		ds.SetAuthToken(token)
@@ -390,9 +383,9 @@ func initOtterDeepSeek(ds *provider.DeepSeekProvider, appConfig *config.Config, 
 	return nil
 }
 
-// initOtterChatGPT wires ChatGPT the way the otter CLI does: the cookie store
-// is the primary credential and the provider falls back to the local Chrome
-// profile itself; env and config tokens remain as a manual override.
+// initOtterChatGPT 按 otter CLI 的方式接入 ChatGPT：
+// cookie 存储是主要凭据，provider 回退到本地 Chrome 配置文件本身；
+// 环境变量和配置 token 作为手动覆盖。
 func initOtterChatGPT(cg *provider.ChatGPTProvider, appConfig *config.Config) {
 	cg.SetCookiesPath(config.ResolvePath(appConfig.ChatGPT.CookiesPath))
 	if appConfig.ChatGPT.Model != "" {
@@ -410,8 +403,7 @@ func initOtterChatGPT(cg *provider.ChatGPTProvider, appConfig *config.Config) {
 	}
 }
 
-// initOtterGemini wires Gemini's cookie store and optional language, matching
-// the otter CLI.
+// initOtterGemini 接入 Gemini 的 cookie 存储和可选语言，与 otter CLI 一致。
 func initOtterGemini(gm *provider.GeminiProvider, appConfig *config.Config) {
 	gm.SetCookiesPath(config.ResolvePath(appConfig.Gemini.CookiesPath))
 	if appConfig.Gemini.Language != "" {

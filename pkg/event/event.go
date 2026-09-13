@@ -1,4 +1,4 @@
-// Package event provides an asynchronous in-memory event bus.
+// Package event 提供异步内存事件总线。
 package event
 
 import (
@@ -17,23 +17,23 @@ var (
 	ErrEventBusClosed        = errors.New("event bus is closed")
 )
 
-// Event identifies an event and its subscription topic.
+// Event 标识一个事件及其订阅主题。
 type Event interface {
 	GetId() int64
 	GetName() string
 }
 
-// EventHandler receives events for a subscribed event id.
+// EventHandler 接收已订阅事件 id 的事件。
 type EventHandler interface {
 	Handle(ent Event)
 }
 
-// EventPublisher publishes events to an event bus.
+// EventPublisher 将事件发布到事件总线。
 type EventPublisher interface {
 	Publish(ent Event) error
 }
 
-// EventBus asynchronously dispatches events using an in-memory queue.
+// EventBus 使用内存队列异步分发事件。
 type EventBus struct {
 	mu          sync.RWMutex
 	subscribers map[string][]EventHandler
@@ -44,7 +44,7 @@ type EventBus struct {
 	closeOnce   sync.Once
 }
 
-// NewEventBus creates and starts an event bus with a 100-event queue.
+// NewEventBus 创建并启动一个 100 事件容量的事件总线。
 func NewEventBus() *EventBus {
 	bus := &EventBus{
 		subscribers: make(map[string][]EventHandler),
@@ -56,7 +56,7 @@ func NewEventBus() *EventBus {
 	return bus
 }
 
-// Subscribe registers a handler for an event name.
+// Subscribe 为事件名称注册处理器。
 func (t *EventBus) Subscribe(eventName Event, handler EventHandler) error {
 	if eventName.GetName() == "" {
 		return ErrNilEvent
@@ -80,13 +80,13 @@ func (t *EventBus) Subscribe(eventName Event, handler EventHandler) error {
 	return nil
 }
 
-// Subscriber is an alias for Subscribe, matching the event handler design draft.
+// Subscriber 是 Subscribe 的别名，匹配事件处理器设计草案。
 func (t *EventBus) Subscriber(eventName Event, handler EventHandler) error {
 	return t.Subscribe(eventName, handler)
 }
 
-// Publish enqueues an event and returns after it has been accepted by the queue.
-// If the queue is full, Publish waits until space is available or the bus closes.
+// Publish 将事件入队，在被队列接受后返回。
+// 如果队列已满，Publish 等待直到有空间或总线关闭。
 func (t *EventBus) Publish(ent Event) error {
 	if isNil(ent) {
 		return ErrNilEvent
@@ -104,7 +104,7 @@ func (t *EventBus) Publish(ent Event) error {
 	return nil
 }
 
-// Close stops accepting events and waits for all accepted events to finish.
+// Close 停止接受事件并等待所有已接受事件处理完成。
 func (t *EventBus) Close() error {
 	t.closeOnce.Do(func() {
 		t.mu.Lock()

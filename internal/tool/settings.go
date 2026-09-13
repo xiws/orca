@@ -4,17 +4,17 @@ import (
 	"github.com/xiws/orca/pkg/utils"
 )
 
-// Settings mirrors the structure of .orca/setting.json, one field per setting.
+// Settings 镜像 .orca/setting.json 的结构，每个设置一个字段。
 type Settings struct {
 	DefaultProvider string `json:"defaultProvider"`
 	DefaultModel    string `json:"defaultModel"`
 	Debug           string `json:"debug"`
 }
 
-// settings is the process-wide configuration backing Get and Set.
+// settings 是进程级配置，支撑 Get 和 Set。
 var settings Settings = LoadSettings()
 
-// Names of the well-known settings, matching the JSON field names.
+// 已知设置的名称，与 JSON 字段名匹配。
 const (
 	KeyDefaultProvider = "defaultProvider"
 	KeyDefaultModel    = "defaultModel"
@@ -22,7 +22,7 @@ const (
 	setting            = "setting.json"
 )
 
-// Get returns the value of the named setting, or "" when the key is unknown.
+// Get 返回指定设置的值，未知键返回 ""。
 func Get(key string) string {
 	switch key {
 	case KeyDefaultProvider:
@@ -36,7 +36,7 @@ func Get(key string) string {
 	}
 }
 
-// Set stores value under the named setting, ignoring unknown keys.
+// Set 在指定设置下存储值，忽略未知键。
 func Set(key, value string) {
 	switch key {
 	case KeyDefaultProvider:
@@ -46,10 +46,9 @@ func Set(key, value string) {
 	}
 }
 
-// LoadSettings reads setting.json from the user home and the project directory,
-// merging them so project-level entries override home-level ones. Each file is
-// unmarshalled straight onto settings, so only the keys a file actually declares
-// are overwritten and a missing or malformed file is skipped.
+// LoadSettings 从用户主目录和项目目录读取 setting.json，
+// 合并它们使项目级条目覆盖主目录级条目。每个文件直接反序列化到 settings，
+// 因此只有文件实际声明的键会被覆盖，缺失或格式错误的文件会被跳过。
 func LoadSettings() Settings {
 	var res Settings
 

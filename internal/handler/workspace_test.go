@@ -20,7 +20,7 @@ func TestWorkspaceResolve(t *testing.T) {
 		{name: "./same.md", want: filepath.Join(root, "same.md")},
 		{name: "inside/../also.md", want: filepath.Join(root, "also.md")},
 		{name: filepath.Join(root, "abs.md"), want: filepath.Join(root, "abs.md")},
-		// The parent does not exist yet, which write is allowed to create.
+		// 父目录尚不存在，write 可以创建它。
 		{name: "created/by/write.md", want: filepath.Join(root, "created/by/write.md")},
 	}
 	for _, tc := range cases {

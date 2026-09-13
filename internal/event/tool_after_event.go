@@ -10,30 +10,30 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 )
 
-// ToolAfterEvent is published after a tool command executes. It carries
-// structured metadata so the handler can render readable results.
+// ToolAfterEvent 在工具命令执行后发布。它携带结构化元数据，
+// 以便处理器渲染可读的结果。
 type ToolAfterEvent struct {
 	id       int64
 	tool     string // "read" | "write" | "edit" | "bash"
-	file     string // target file path (empty for bash)
-	ok       bool   // whether the command succeeded
-	summary  string // one-line summary
-	content  string // detailed output content
-	exitCode int    // bash exit code; 0 for non-bash or success
+	file     string // 目标文件路径（bash 为空）
+	ok       bool   // 命令是否成功
+	summary  string // 单行摘要
+	content  string // 详细输出内容
+	exitCode int    // bash 退出码；非 bash 或成功时为 0
 }
 
 func (e ToolAfterEvent) GetId() int64    { return e.id }
 func (e ToolAfterEvent) GetName() string { return "ToolAfterEvent" }
 
-// NewToolAfterEvent builds an after-event with structured fields.
+// NewToolAfterEvent 构建带结构化字段的 after-event。
 //
-//   - tool: command name ("read", "write", "edit", "bash")
-//   - file: target file path (empty for bash)
-//   - content: detailed output (file content for read, merged output for bash)
-//   - ok: whether the command succeeded
-//   - summary: one-line summary
-//   - exitCode: bash exit status (0 otherwise)
-//   - id: invocation id
+//   - tool: 命令名（"read"、"write"、"edit"、"bash"）
+//   - file: 目标文件路径（bash 为空）
+//   - content: 详细输出（read 的文件内容，bash 的合并输出）
+//   - ok: 命令是否成功
+//   - summary: 单行摘要
+//   - exitCode: bash 退出状态（其他情况为 0）
+//   - id: 调用 id
 func NewToolAfterEvent(tool, file, content string, ok bool, summary string, exitCode int, id int64) ToolAfterEvent {
 	return ToolAfterEvent{
 		tool:     tool,
@@ -46,7 +46,7 @@ func NewToolAfterEvent(tool, file, content string, ok bool, summary string, exit
 	}
 }
 
-// ToolAfterEventHandler renders the after-event result using glamour.
+// ToolAfterEventHandler 使用 glamour 渲染 after-event 结果。
 type ToolAfterEventHandler struct{}
 
 func (b ToolAfterEventHandler) Handle(ent event.Event) {
@@ -64,7 +64,7 @@ func (b ToolAfterEventHandler) Handle(ent event.Event) {
 		glamour.WithWordWrap(-1),
 	)
 	if err != nil {
-		// Fallback: print raw
+		// 回退：打印原始内容
 		b.printRaw(e)
 		return
 	}
@@ -78,7 +78,7 @@ func (b ToolAfterEventHandler) Handle(ent event.Event) {
 	fmt.Print(rendered)
 }
 
-// renderMarkdown builds the markdown representation of a tool after-event.
+// renderMarkdown 构建工具 after-event 的 markdown 表示。
 func (b ToolAfterEventHandler) renderMarkdown(e ToolAfterEvent) string {
 	if !e.ok {
 		return fmt.Sprintf("❌ **%s** `%s` failed: %s\n", e.tool, e.file, e.summary)
@@ -115,8 +115,7 @@ func (b ToolAfterEventHandler) renderMarkdown(e ToolAfterEvent) string {
 	}
 }
 
-// printRaw prints the event content as plain text, used as a fallback when
-// glamour rendering fails.
+// printRaw 以纯文本形式打印事件内容，作为 glamour 渲染失败时的回退。
 func (b ToolAfterEventHandler) printRaw(e ToolAfterEvent) {
 	if !e.ok {
 		fmt.Printf("❌ %s (%s): %s\n", e.tool, e.file, e.summary)
@@ -128,9 +127,8 @@ func (b ToolAfterEventHandler) printRaw(e ToolAfterEvent) {
 	}
 }
 
-// detectLang maps a file extension to a markdown code-block language tag.
-// Returns an empty string for unknown extensions, which renders as a plain
-// code block without syntax highlighting.
+// detectLang 将文件扩展名映射到 markdown 代码块的语言标签。
+// 未知扩展名返回空字符串，渲染为无语法高亮的普通代码块。
 func detectLang(filePath string) string {
 	switch {
 	case strings.HasSuffix(filePath, ".go"):
