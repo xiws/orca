@@ -39,16 +39,17 @@ func listSessions() error {
 	}
 
 	// 打印表头
-	fmt.Printf("%-20s  %-30s  %8s  %8s  %s\n",
-		"ID", "PROJECT", "MESSAGES", "TOKENS", "UPDATED")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Printf("%-20s  %-30s  %-30s  %8s  %8s  %s\n",
+		"ID", "TITLE", "PROJECT", "MESSAGES", "TOKENS", "UPDATED")
+	fmt.Println(strings.Repeat("-", 130))
 
 	// 打印每个会话
 	for _, m := range metas {
+		title := truncateStr(m.Title, 30)
 		project := truncatePath(m.ProjectPath, 30)
 		updated := formatRelativeTime(m.UpdateTime)
-		fmt.Printf("%-20d  %-30s  %8d  %8d  %s\n",
-			m.Id, project, m.MessageCount, m.TotalTokens, updated)
+		fmt.Printf("%-20d  %-30s  %-30s  %8d  %8d  %s\n",
+			m.Id, title, project, m.MessageCount, m.TotalTokens, updated)
 	}
 
 	return nil
@@ -99,6 +100,18 @@ func deleteAllSessions() error {
 
 	fmt.Printf("Deleted %d session(s)\n", len(metas))
 	return nil
+}
+
+// truncateStr 将字符串截断到 maxLen 个字符（按 rune 计算）。
+func truncateStr(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // truncatePath 缩短路径以适应 maxLen 个字符。

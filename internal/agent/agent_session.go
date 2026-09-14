@@ -9,6 +9,7 @@ import (
 )
 
 type Session struct {
+	Title       string            `json:"title"`                 // 会话标题
 	Messages    []llm.ChatMessage `json:"messages"`              // 消息时间线
 	ProjectPath string            `json:"project_path"`          // 项目路径
 	Provider    llm.ModelInfo     `json:"provider"`              // 模型 Provider

@@ -23,6 +23,7 @@ const (
 // SessionMeta 保存会话的摘要信息，用于列表展示。
 type SessionMeta struct {
 	Id           int64  `json:"id"`
+	Title        string `json:"title"`
 	ProjectPath  string `json:"project_path"`
 	MessageCount int    `json:"message_count"`
 	TotalTokens  int    `json:"total_tokens"`
@@ -33,6 +34,7 @@ type SessionMeta struct {
 // sessionFile 是磁盘存储格式，嵌入 SessionMeta 并包含完整消息。
 type sessionFile struct {
 	Id          int64             `json:"id"`
+	Title       string            `json:"title"`
 	ProjectPath string            `json:"project_path"`
 	Provider    llm.ModelInfo     `json:"provider"`
 	TotalUsage  llm.Usage         `json:"total_usage"`
@@ -79,6 +81,7 @@ func Save(s *agent.Session) error {
 
 	file := sessionFile{
 		Id:          s.Id,
+		Title:       s.Title,
 		ProjectPath: s.ProjectPath,
 		Provider:    s.Provider,
 		TotalUsage:  s.TotalUsage,
@@ -132,6 +135,7 @@ func loadFromFile(path string) (*agent.Session, error) {
 	}
 
 	session := &agent.Session{
+		Title:       file.Title,
 		Id:          file.Id,
 		ProjectPath: file.ProjectPath,
 		Provider:    file.Provider,
@@ -208,8 +212,14 @@ func listFromDir(dir string) []SessionMeta {
 			continue
 		}
 
+		title := file.Title
+		if title == "" {
+			title = firstUserMessage(file.Messages)
+		}
+
 		metas = append(metas, SessionMeta{
 			Id:           file.Id,
+			Title:        title,
 			ProjectPath:  file.ProjectPath,
 			MessageCount: len(file.Messages),
 			TotalTokens:  file.TotalUsage.TotalTokens,
@@ -291,4 +301,19 @@ func clearDir(dir string) error {
 	}
 
 	return nil
+}
+
+// firstUserMessage 从消息列表中提取第一条用户消息的前 30 个字符作为 fallback 标题。
+func firstUserMessage(msgs []llm.ChatMessage) string {
+	for _, m := range msgs {
+		if m.Role == llm.RoleUser && strings.TrimSpace(m.Content) != "" {
+			line := strings.SplitN(strings.TrimSpace(m.Content), "\n", 2)[0]
+			runes := []rune(strings.TrimSpace(line))
+			if len(runes) > 30 {
+				return string(runes[:27]) + "..."
+			}
+			return string(runes)
+		}
+	}
+	return ""
 }

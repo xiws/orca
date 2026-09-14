@@ -71,6 +71,7 @@ func main() {
 // 接收命令协议描述。
 func CreateTask(args *CliArgs) (*agent.Task, error) {
 	var task = agent.NewTask(args.Prompt, "")
+	task.SessionInfo.Title = generateTitle(args.Prompt)
 	if args.Model != "" && args.Provider != "" {
 		task.SessionInfo.SetProvider(args.Provider, args.Model)
 	}
@@ -119,6 +120,19 @@ func userPrompt(args *CliArgs) (string, error) {
 	}
 	builder.WriteString(args.Prompt)
 	return builder.String(), nil
+}
+
+// generateTitle 从用户首条 prompt 生成会话标题。
+// 取第一行，截断到 maxTitleLen 个字符。
+func generateTitle(prompt string) string {
+	const maxTitleLen = 50
+	// 取第一行
+	line := strings.SplitN(strings.TrimSpace(prompt), "\n", 2)[0]
+	line = strings.TrimSpace(line)
+	if len([]rune(line)) <= maxTitleLen {
+		return line
+	}
+	return string([]rune(line)[:maxTitleLen-3]) + "..."
 }
 
 // ResumeTask 加载已有会话并准备任务以继续对话。
