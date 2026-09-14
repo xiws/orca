@@ -21,6 +21,18 @@ type ToolBeforeEvent struct {
 func (e ToolBeforeEvent) GetId() int64    { return e.id }
 func (e ToolBeforeEvent) GetName() string { return "ToolBeforeEvent" }
 
+// ToolName 返回命令名（"read"、"write"、"edit"、"bash"、"create_task"）。
+func (e ToolBeforeEvent) ToolName() string { return e.tool }
+
+// File 返回目标文件路径。
+func (e ToolBeforeEvent) File() string { return e.file }
+
+// Meta 返回额外上下文信息（行范围、bash 命令等）。
+func (e ToolBeforeEvent) Meta() string { return e.meta }
+
+// Reasoning 返回模型对此工具调用的推理。
+func (e ToolBeforeEvent) Reasoning() string { return e.reasoning }
+
 // NewToolBeforeEvent 构建带结构化字段的 before-event。
 //
 //   - tool: 命令名（"read"、"write"、"edit"、"bash"、"create_task"）

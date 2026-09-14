@@ -28,31 +28,55 @@ var ErrMaxTurns = errors.New("agent: reached the turn limit while the model kept
 // 实现来驱动循环，使用脚本化的模型响应。
 type requesterFactory func(llm.ModelInfo) llm.Requester
 
+// RuntimeOption 配置 Runtime 的构造行为。
+type RuntimeOption func(*Runtime)
+
+// WithSkipDefaultHandlers 跳过注册默认的 CLI 事件处理器（打印到 stdout），
+// 由调用方通过 Subscribe 自行注册处理器（例如 TUI）。
+func WithSkipDefaultHandlers() RuntimeOption {
+	return func(r *Runtime) { r.skipDefaultHandlers = true }
+}
+
+// WithMsgChannel 设置流式内容输出的外部通道。
+// TUI 使用此选项接收流式内容块，而非由内部 goroutine 打印到 stdout。
+func WithMsgChannel(ch chan<- string) RuntimeOption {
+	return func(r *Runtime) { r.msg = ch }
+}
+
 // Runtime 执行一个模型轮次产生的命令。
 //
 // 命令始终按模型产生的顺序执行，不会并发：
 // 一个接一个的读取、写入或编辑不会看到过时的内容，
 // 而 bash 命令可能依赖前一个写入刚创建的文件。
 type Runtime struct {
-	commands     command.Command
-	bus          event.EventPublisher
-	workspace    handler.Workspace
-	msg          chan<- string
-	newRequester requesterFactory
+	commands            command.Command
+	bus                 event.EventPublisher
+	workspace           handler.Workspace
+	msg                 chan<- string
+	newRequester        requesterFactory
+	skipDefaultHandlers bool
 }
 
 // NewRuntime 将命令注册表连接到事件总线。总线可以为 nil，
-// 此时结果仅返回给调用方。
-func NewRuntime() *Runtime {
-
-	bus, err := registerEvent()
-	if err != nil {
-		panic(err)
+// 此时结果仅返回给调用方。opts 可控制是否跳过默认事件处理器。
+func NewRuntime(opts ...RuntimeOption) *Runtime {
+	var runtime Runtime
+	for _, opt := range opts {
+		opt(&runtime)
 	}
+
+	// 始终创建事件总线，以便调用方可以通过 Subscribe 注册自己的处理器。
+	bus := event.NewEventBus()
+	if !runtime.skipDefaultHandlers {
+		if err := registerEventHandlers(bus); err != nil {
+			panic(err)
+		}
+	}
+	runtime.bus = bus
 
 	var work = handler.Workspace{
 		Root:      utils.GetCurrentPath(),
-		Publisher: bus,
+		Publisher: runtime.bus,
 	}
 
 	handle := command.NewCommandHandle()
@@ -60,31 +84,42 @@ func NewRuntime() *Runtime {
 		panic(err)
 	}
 
-	ch := make(chan string)
+	runtime.workspace = work
+	runtime.commands = handle
 
-	var runtime = &Runtime{commands: handle, bus: bus, workspace: work, msg: ch}
-	go runtime.messageChannel(ch)
-	return runtime
+	if !runtime.skipDefaultHandlers {
+		ch := make(chan string)
+		runtime.msg = ch
+		go runtime.messageChannel(ch)
+	}
+
+	return &runtime
 }
 
-// registerEvent 启动运行时发布命令结果的事件总线，
-// 如果尚未存在，并将 h 订阅到 eventName。重复调用可将更多
-// 订阅者附加到同一总线；主题名称由 event.Event.GetName 返回。
-func registerEvent() (event.EventPublisher, error) {
-	bus := event.NewEventBus()
+// Subscribe 向运行时的事件总线注册事件处理器。
+// 事件总线始终创建，调用方可随时订阅自定义处理器。
+func (r *Runtime) Subscribe(eventName event.Event, handler event.EventHandler) error {
+	if r.bus == nil {
+		return nil
+	}
+	return r.bus.(*event.EventBus).Subscribe(eventName, handler)
+}
+
+// registerEventHandlers 将默认的 CLI 事件处理器订阅到给定的事件总线。
+func registerEventHandlers(bus *event.EventBus) error {
 	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := bus.Subscribe(event2.ToolBeforeEvent{}, event2.ToolEventBeforeHandler{}); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := bus.Subscribe(event2.TaskComplateEvent{}, event2.TaskComplateEventHandler{}); err != nil {
-		return nil, err
+		return err
 	}
 
-	return bus, nil
+	return nil
 }
 
 // RunTask 运行任务
@@ -115,7 +150,7 @@ func (r *Runtime) execute(task *Task) (error, string) {
 	restoreOtterState(requester, task.SessionInfo)
 
 	for turn := 0; turn < MaxTurns; turn++ {
-		var res = requester.Request(task.SessionInfo.GetMessages(), nil)
+		var res = requester.Request(task.SessionInfo.GetMessages(), r.msg)
 		if res.Error != nil {
 			return res.Error, ""
 		}

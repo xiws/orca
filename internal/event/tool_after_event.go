@@ -25,6 +25,24 @@ type ToolAfterEvent struct {
 func (e ToolAfterEvent) GetId() int64    { return e.id }
 func (e ToolAfterEvent) GetName() string { return "ToolAfterEvent" }
 
+// ToolName 返回命令名。
+func (e ToolAfterEvent) ToolName() string { return e.tool }
+
+// File 返回目标文件路径。
+func (e ToolAfterEvent) File() string { return e.file }
+
+// OK 返回命令是否成功。
+func (e ToolAfterEvent) OK() bool { return e.ok }
+
+// Content 返回详细输出内容。
+func (e ToolAfterEvent) Content() string { return e.content }
+
+// Summary 返回单行摘要。
+func (e ToolAfterEvent) Summary() string { return e.summary }
+
+// ExitCode 返回 bash 退出码。
+func (e ToolAfterEvent) ExitCode() int { return e.exitCode }
+
 // NewToolAfterEvent 构建带结构化字段的 after-event。
 //
 //   - tool: 命令名（"read"、"write"、"edit"、"bash"）

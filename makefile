@@ -9,12 +9,16 @@ run:
 build:
 	go build -o orca ./cmd/cli
 
+.PHONY: build-tui
+build-tui:
+	go build -o orca-tui ./cmd/tui
+
+.PHONY: run-tui
+run-tui:
+	go run ./cmd/tui
+
 .PHONY: publish
 publish: build
 	@echo "📦 安装 $(BINARY) 到 GOPATH/bin..."
 	@cp ./$(BINARY) $(GOPATH)/bin/$(BINARY)
 	@echo "✅ 安装完成: $(GOPATH)/bin/$(BINARY)"
-
-.PHONY: run
-run:
-	go run ./cmd/cli -p otter -m  gpt "这个项目做了什么"
