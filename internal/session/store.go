@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xiws/orca/internal/agent"
+	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/utils"
 )
@@ -73,7 +73,7 @@ func sessionPath(dir string, id int64) string {
 }
 
 // Save 将会话持久化到项目级会话目录。
-func Save(s *agent.Session) error {
+func Save(s *core.Session) error {
 	dir := getProjectSessionDir()
 	if err := ensureDir(dir); err != nil {
 		return fmt.Errorf("create session directory: %w", err)
@@ -106,7 +106,7 @@ func Save(s *agent.Session) error {
 
 // Load 从项目目录或主目录读取会话。
 // 项目会话优先于主目录会话。
-func Load(id int64) (*agent.Session, error) {
+func Load(id int64) (*core.Session, error) {
 	// 先尝试项目目录
 	if path := sessionPath(getProjectSessionDir(), id); utils.Exists(path) {
 		return loadFromFile(path)
@@ -123,7 +123,7 @@ func Load(id int64) (*agent.Session, error) {
 }
 
 // loadFromFile 从文件读取并解析会话。
-func loadFromFile(path string) (*agent.Session, error) {
+func loadFromFile(path string) (*core.Session, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read session file: %w", err)
@@ -134,7 +134,7 @@ func loadFromFile(path string) (*agent.Session, error) {
 		return nil, fmt.Errorf("parse session file: %w", err)
 	}
 
-	session := &agent.Session{
+	session := &core.Session{
 		Title:       file.Title,
 		Id:          file.Id,
 		ProjectPath: file.ProjectPath,

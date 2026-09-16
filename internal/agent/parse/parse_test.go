@@ -1,4 +1,4 @@
-package agent
+package parse
 
 import (
 	"encoding/json"

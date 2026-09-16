@@ -1,4 +1,6 @@
-package agent
+// Package parse 将模型输出的命令对象解码为其处理器的 option，
+// 覆盖原生工具调用与回复文本中内嵌命令两种形式。
+package parse
 
 import (
 	"bytes"
@@ -212,8 +214,8 @@ func setId(opt command.CommandOption, id int64) {
 	}
 }
 
-// setReasoning 将推理过程写入 option，以便处理器在发布 ToolBeforeEvent 时使用。
-func setReasoning(opt command.CommandOption, reasoning string) {
+// SetReasoning 将推理过程写入 option，以便处理器在发布 ToolBeforeEvent 时使用。
+func SetReasoning(opt command.CommandOption, reasoning string) {
 	if reasoning == "" {
 		return
 	}

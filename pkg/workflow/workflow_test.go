@@ -517,3 +517,13 @@ func TestGuardWithContext(t *testing.T) {
 		t.Fatalf("To = %s, want FINISHED", result.To)
 	}
 }
+
+func TestWorkflow_full(t *testing.T) {
+	wf := NewWorkflow("test")
+	var submit = wf.State("submit")
+	_ = wf.State("approval")
+	_ = wf.State("verify")
+	_ = wf.State("finish")
+
+	submit.workflow.From("submit").To("approval").Action("approve")
+}

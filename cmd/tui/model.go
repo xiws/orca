@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/xiws/orca/internal/agent"
+	"github.com/xiws/orca/internal/agent/core"
 	ievent "github.com/xiws/orca/internal/event"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/event"
@@ -96,8 +96,8 @@ var (
 type model struct {
 	viewport viewport.Model
 	input    textinput.Model
-	runtime  *agent.Runtime
-	session  *agent.Session
+	runtime  *core.Runtime
+	session  *core.Session
 	msgCh    <-chan string
 
 	chatHistory     []string
@@ -112,19 +112,19 @@ type model struct {
 func newModel() model {
 	msgCh := make(chan string, 100)
 
-	runtime := agent.NewRuntime(
-		agent.WithSkipDefaultHandlers(),
-		agent.WithMsgChannel(msgCh),
+	runtime := core.NewRuntime(
+		core.WithSkipDefaultHandlers(),
+		core.WithMsgChannel(msgCh),
 	)
 
 	// 订阅 TUI 事件处理器
 	_ = runtime.Subscribe(ievent.ToolBeforeEvent{}, tuiToolBeforeHandler{})
 	_ = runtime.Subscribe(ievent.ToolAfterEvent{}, tuiToolAfterHandler{})
 
-	session := agent.NewSession()
+	session := core.NewSession()
 
 	// 系统提示只添加一次，后续轮次复用同一个 session 保留上下文
-	ctx := agent.PromptContext{
+	ctx := core.PromptContext{
 		ProjectPath:   session.ProjectPath,
 		ContextLength: session.Provider.ContextWindow,
 	}
@@ -265,7 +265,7 @@ func (m model) runAgent(prompt string) tea.Cmd {
 		// 追加用户消息到已有会话（系统提示已在 newModel 中添加）
 		m.session.AppendMessage(llm.RoleUser, prompt)
 
-		task := &agent.Task{
+		task := &core.Task{
 			Id:          m.session.Id,
 			SessionInfo: m.session,
 			TaskTarget:  prompt,

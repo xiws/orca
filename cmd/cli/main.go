@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/xiws/orca/internal/agent"
+	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/internal/session"
 	"github.com/xiws/orca/pkg/utils"
@@ -32,9 +32,9 @@ func main() {
 		return
 	}
 
-	runtime := agent.NewRuntime()
+	runtime := core.NewRuntime()
 
-	var task *agent.Task
+	var task *core.Task
 	if args.SessionId > 0 {
 		// 恢复已有会话
 		task, err = ResumeTask(args)
@@ -69,8 +69,8 @@ func main() {
 //
 // 不支持原生函数调用的 Provider 会在系统上下文中
 // 接收命令协议描述。
-func CreateTask(args *CliArgs) (*agent.Task, error) {
-	var task = agent.NewTask(args.Prompt, "")
+func CreateTask(args *CliArgs) (*core.Task, error) {
+	var task = core.NewTask(args.Prompt, "")
 	task.SessionInfo.Title = generateTitle(args.Prompt)
 	if args.Model != "" && args.Provider != "" {
 		task.SessionInfo.SetProvider(args.Provider, args.Model)
@@ -83,7 +83,7 @@ func CreateTask(args *CliArgs) (*agent.Task, error) {
 		}
 		task.SessionInfo.AppendMessage(llm.RoleSystem, string(buffer))
 	} else {
-		data := agent.PromptContext{
+		data := core.PromptContext{
 			ProjectPath:   utils.GetCurrentPath(),
 			ContextLength: task.SessionInfo.Provider.ContextWindow,
 		}
@@ -137,7 +137,7 @@ func generateTitle(prompt string) string {
 
 // ResumeTask 加载已有会话并准备任务以继续对话。
 // 它将新的用户消息追加到已有会话历史中。
-func ResumeTask(args *CliArgs) (*agent.Task, error) {
+func ResumeTask(args *CliArgs) (*core.Task, error) {
 	// 加载已有会话
 	sess, err := session.Load(args.SessionId)
 	if err != nil {
@@ -145,7 +145,7 @@ func ResumeTask(args *CliArgs) (*agent.Task, error) {
 	}
 
 	// 使用已加载的会话创建任务
-	task := &agent.Task{
+	task := &core.Task{
 		Id:          utils.GetSnowFlakeId(),
 		SessionInfo: sess,
 		TaskTarget:  args.Prompt,

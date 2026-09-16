@@ -81,7 +81,7 @@ type CommandResult struct {
 | `internal/handler/proc_{unix,windows}.go` | 进程组创建与超时 kill |
 | `internal/handler/parse.go` | JSON 协议 → `CommandOption` |
 | `internal/handler/schema.go` | 提示词里的工具说明 |
-| `internal/agent/agent_runtime.go` | 命令执行与事件发布的串联 |
+| `internal/agent/core/runtime.go` | 命令执行与事件发布的串联 |
 
 每个参数实现 `command.CommandOption`：`GetName()` 返回常量命令名（零值对象也能正确路由），`GetId()` 返回 int64 的调用 id。
 

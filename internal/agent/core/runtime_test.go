@@ -1,4 +1,4 @@
-package agent
+package core
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xiws/orca/internal/agent/parse"
 	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/command"
@@ -211,7 +212,7 @@ func TestExecuteCommandAnswersUnknownTool(t *testing.T) {
 	if err := json.Unmarshal([]byte(answer.Content), &payload); err != nil {
 		t.Fatalf("tool content %q is not a CommandResult: %v", answer.Content, err)
 	}
-	if payload.OK || !strings.Contains(payload.Err, ErrUnknownCommand.Error()) {
+	if payload.OK || !strings.Contains(payload.Err, parse.ErrUnknownCommand.Error()) {
 		t.Errorf("payload = %+v, want an unknown command failure", payload)
 	}
 }
@@ -296,7 +297,7 @@ func TestNewRuntimeRegistersToolCommands(t *testing.T) {
 	for _, name := range handler.Commands() {
 		// 空负载让每个处理器不触及文件系统：命令被分发并
 		// 以业务结果失败而非 ErrCommandNotFound，这正好证明它已注册。
-		opt, err := OptionFromCall(1, name, `{}`)
+		opt, err := parse.OptionFromCall(1, name, `{}`)
 		if err != nil {
 			t.Fatalf("OptionFromCall(%q) error = %v", name, err)
 		}

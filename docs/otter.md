@@ -98,13 +98,13 @@ otter 平台侧会话是**有状态**的：平台自己记住历史，后续消�
 
 web 平台无原生 function calling，因此 `supportsTools: false` 的模型走文本协议：
 
-1. `Session.AppendToolPrompt()`（internal/agent/agent_session.go）在
+1. `Session.AppendToolPrompt()`（internal/agent/core/session.go）在
    `SupportsTools=false` 时追加一条 system 消息，内容为
    `handler.ToolPrompt()`——命令清单由 `handler.Commands()` 生成
    （read / write / edit / bash / create_task），prompt 与解析器不会漂移。
    `cmd/cli/main.go` 与子任务入口都会调用，`-sp` 自定义提示同样生效。
 2. runtime 的 `execute` 拿到回复后，若无原生 `ToolCalls`，用
-   `agent.ParseTextCalls`（internal/agent/command_parse.go）从回复文本提取命令：
+   `parse.ParseTextCalls`（internal/agent/parse/parse.go）从回复文本提取命令：
    - 平衡括号扫描 JSON 值（字符串 / 转义感知），支持单个对象或对象数组、代码围栏；
    - 只接受 `command` 值属于 `handler.Commands()` 白名单的对象；
    - 嵌套在更大 JSON 里的命令对象视为示例，不执行；

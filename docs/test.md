@@ -86,10 +86,10 @@ func ParseArgs() (*CliArgs, error) {
 
 ### 目标
 
-`cmd/cli/main.go` 是 orca 的命令行入口，把用户的一次调用组装成一个"任务"（`agent.Task`），交给 `agent.Runtime`
+`cmd/cli/main.go` 是 orca 的命令行入口，把用户的一次调用组装成一个"任务"（`core.Task`），交给 `core.Runtime`
 在多轮模型循环里执行，最后把结果打印到 stdout。它本身的职责很轻：只做**编排**——解析参数 → 建 runtime → 建任务 →
-执行 → 输出/报错。参数解析、任务构建、runtime 执行分别放在它的同包文件 `args.go`、它与 `internal/agent` 的协作、和
-`agent_runtime.go` 里。
+执行 → 输出/报错。参数解析、任务构建、runtime 执行分别放在它的同包文件 `args.go`、它与 `internal/agent/core` 的协作、和
+`internal/agent/core/runtime.go` 里。
 
 ### 主流程（`main`）
 

@@ -1,6 +1,6 @@
-// Package agent 驱动对话流程：向模型请求下一步操作，
+// Package core 驱动对话流程：向模型请求下一步操作，
 // 执行模型要求的命令并将结果返回给它。
-package agent
+package core
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	event2 "github.com/xiws/orca/internal/event"
 	"github.com/xiws/orca/internal/tool"
 
+	"github.com/xiws/orca/internal/agent/parse"
 	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/command"
@@ -105,6 +106,22 @@ func (r *Runtime) Subscribe(eventName event.Event, handler event.EventHandler) e
 	return r.bus.(*event.EventBus).Subscribe(eventName, handler)
 }
 
+// Publish 向运行时的事件总线发布事件，供外部模块（如 workflow 编排层）
+// 在不接触内部字段的情况下通知订阅者。总线未初始化时为 no-op。
+func (r *Runtime) Publish(e event.Event) error {
+	if r.bus == nil {
+		return nil
+	}
+	return r.bus.Publish(e)
+}
+
+// Close 关闭事件总线并等待已接受的事件处理完成。
+func (r *Runtime) Close() {
+	if bus, ok := r.bus.(*event.EventBus); ok {
+		_ = bus.Close()
+	}
+}
+
 // registerEventHandlers 将默认的 CLI 事件处理器订阅到给定的事件总线。
 func registerEventHandlers(bus *event.EventBus) error {
 	if err := bus.Subscribe(event2.ToolAfterEvent{}, event2.ToolAfterEventHandler{}); err != nil {
@@ -166,7 +183,7 @@ func (r *Runtime) execute(task *Task) (error, string) {
 		if len(calls) == 0 && !task.SessionInfo.Provider.SupportsTools {
 			// Provider 无法原生调用工具：模型将命令嵌入
 			// 回复文本中，在此处提取出来。
-			calls = llm.EnsureToolCallIDs(ParseTextCalls(res.Content))
+			calls = llm.EnsureToolCallIDs(parse.ParseTextCalls(res.Content))
 		}
 		task.SessionInfo.AppendAssistant(res.Content, calls)
 		if len(calls) == 0 {
@@ -247,13 +264,13 @@ func (r *Runtime) executeCommand(task *Task, calls []llm.ToolCall) error {
 // runTool 执行一个工具调用并渲染回复它的工具消息内容。
 func (r *Runtime) runTool(task *Task, call llm.ToolCall) (string, error) {
 	id := utils.GetSnowFlakeId()
-	opt, err := OptionFromCall(id, call.Name, call.Arguments)
+	opt, err := parse.OptionFromCall(id, call.Name, call.Arguments)
 	if err != nil {
 		return "", err
 	}
 
 	// 将 reasoning 从 ToolCall 传入 option，供 handler 发布 ToolBeforeEvent 时使用
-	setReasoning(opt, call.Reasoning)
+	parse.SetReasoning(opt, call.Reasoning)
 
 	execErr, res := r.commands.Execute(opt)
 	if execErr != nil {
