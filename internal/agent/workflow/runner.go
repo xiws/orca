@@ -23,89 +23,55 @@ func NewWorkflowRunner(runtime *core.Runtime) *WorkflowRunner {
 // Run 将 WorkflowPlan 编译为 workflow 并执行。
 //
 // 执行流程：
-// 1. 将 WorkflowPlan 转换为 workflow.Workflow 定义
+// 1. 将 WorkflowPlan 转换为 workflow.Workflow 定义（每个 State 挂载 Handler）
 // 2. 创建 workflow.Engine
-// 3. 从初始节点开始执行
-// 4. 根据节点类型调用相应的 Agent（Executor/Verifier/Repair）
+// 3. 调用 Engine.Run 自动驱动状态流转直到终态
 func (wr *WorkflowRunner) Run(plan *roles.WorkflowPlan, task *core.Task) error {
 	if plan == nil || len(plan.Nodes) == 0 {
 		return fmt.Errorf("workflow plan is empty")
 	}
 
-	// 构建 workflow 定义
-	definition := wr.buildWorkflow(plan)
+	// 构建 workflow 定义（每个 State 挂载 Handler）
+	definition := wr.buildWorkflow(plan, task)
 	wr.engine = wf.NewEngine(definition)
 
-	// 找到初始节点（第一个 execute 节点）
+	// 找到初始节点
 	initialNode := wr.findInitialNode(plan)
 	if initialNode == "" {
 		return fmt.Errorf("no initial node found in workflow plan")
 	}
 
-	// 执行 workflow
-	currentState := initialNode
-	ctx := wf.Context{
-		"task":    task,
-		"runtime": wr.runtime,
-		"plan":    plan,
+	// 由 Engine.Run 自动驱动状态流转
+	result, err := wr.engine.Run(wf.RunRequest{
+		InitialState: initialNode,
+		InstanceID:   fmt.Sprintf("%d", task.Id),
+		Context: wf.Context{
+			"task":    task,
+			"runtime": wr.runtime,
+			"plan":    plan,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("workflow execution failed: %w", err)
 	}
 
-	for {
-		// 获取当前节点
-		node := wr.findNode(plan, currentState)
-		if node == nil {
-			return fmt.Errorf("node %q not found in plan", currentState)
-		}
-
-		// 重试保护：防止 verify→repair→execute 无限循环
-		if node.Type == "execute" && task.RetryCount > task.MaxRetries {
-			return fmt.Errorf("max retries (%d) exceeded for task", task.MaxRetries)
-		}
-
-		// 1) 执行节点业务逻辑
-		nodeResult, err := wr.ExecuteNode(node, task)
-		if err != nil {
-			return fmt.Errorf("node %q execution failed: %w", currentState, err)
-		}
-
-		// 2) 将执行结果存入 context
-		ctx["node_result"] = nodeResult
-		ctx["node_id"] = currentState
-
-		// 3) 将结果映射为 edge action
-		action := wr.resolveAction(node, nodeResult)
-
-		// 4) 通过 engine 执行状态流转（Guard/Condition/Hook 校验）
-		result, err := wr.engine.Execute(wf.ExecuteRequest{
-			InstanceID:   fmt.Sprintf("%d", task.Id),
-			CurrentState: currentState,
-			Action:       action,
-			Context:      ctx,
-		})
-		if err != nil {
-			return fmt.Errorf("transition failed at %q with action %q: %w", currentState, action, err)
-		}
-
-		// 5) 检查是否到达终态
-		if wr.isTerminal(plan, result.To) {
-			return nil
-		}
-
-		// 流转到下一状态
-		currentState = result.To
-	}
+	_ = result // 可扩展：记录 history 到 memory
+	return nil
 }
 
-// buildWorkflow 将 WorkflowPlan 转换为 workflow.Workflow。
-func (wr *WorkflowRunner) buildWorkflow(plan *roles.WorkflowPlan) *wf.Workflow {
+// buildWorkflow 将 WorkflowPlan 转换为 workflow.Workflow，并为每个 State 挂载 Handler。
+func (wr *WorkflowRunner) buildWorkflow(plan *roles.WorkflowPlan, task *core.Task) *wf.Workflow {
 	w := wf.NewWorkflow("agent-workflow")
 
-	// 注册所有节点为状态
+	// 注册所有节点为状态，并挂载 Handler
 	for _, node := range plan.Nodes {
-		state := w.State(node.ID)
+		sb := w.State(node.ID)
 		if wr.isTerminal(plan, node.ID) {
-			state.Terminal()
+			sb.Terminal()
+			continue // 终态节点不需要 Handler
 		}
+		// 将节点执行逻辑封装为 Handler
+		sb.Handler(wr.nodeHandler(&node, task))
 	}
 
 	// 注册所有边为流转
@@ -114,6 +80,27 @@ func (wr *WorkflowRunner) buildWorkflow(plan *roles.WorkflowPlan) *wf.Workflow {
 	}
 
 	return w
+}
+
+// nodeHandlerAdapter 将 ExecuteNode + resolveAction 适配为 wf.Handler。
+type nodeHandlerAdapter struct {
+	runner *WorkflowRunner
+	node   *roles.PlanNode
+	task   *core.Task
+}
+
+// Handle 执行节点业务逻辑并返回映射后的 action。
+func (h *nodeHandlerAdapter) Handle(ctx wf.Context) (string, error) {
+	result, err := h.runner.ExecuteNode(h.node, h.task)
+	if err != nil {
+		return "", err
+	}
+	return h.runner.resolveAction(h.node, result), nil
+}
+
+// nodeHandler 创建节点对应的 Handler。
+func (wr *WorkflowRunner) nodeHandler(node *roles.PlanNode, task *core.Task) wf.Handler {
+	return &nodeHandlerAdapter{runner: wr, node: node, task: task}
 }
 
 // findInitialNode 找到初始执行节点。

@@ -111,8 +111,9 @@ func TestWorkflowRunner_IsTerminal(t *testing.T) {
 func TestWorkflowRunner_BuildWorkflow(t *testing.T) {
 	wr := &WorkflowRunner{}
 	plan := roles.DefaultWorkflowPlan()
+	task := core.NewTask("test", "test")
 
-	wf := wr.buildWorkflow(plan)
+	wf := wr.buildWorkflow(plan, task)
 	if wf == nil {
 		t.Fatal("expected non-nil workflow")
 	}
@@ -125,6 +126,20 @@ func TestWorkflowRunner_BuildWorkflow(t *testing.T) {
 	transitions := wf.Transitions()
 	if len(transitions) != 3 {
 		t.Errorf("expected 3 transitions, got %d", len(transitions))
+	}
+
+	// 非终态节点应挂载 Handler
+	for _, s := range states {
+		if s.Name == "done" {
+			// done 是终态，不需要 Handler
+			if !s.Terminal {
+				t.Error("done should be terminal")
+			}
+			continue
+		}
+		if s.Handler == nil {
+			t.Errorf("state %q should have a handler", s.Name)
+		}
 	}
 }
 

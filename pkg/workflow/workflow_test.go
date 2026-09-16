@@ -527,3 +527,243 @@ func TestWorkflow_full(t *testing.T) {
 
 	submit.workflow.From("submit").To("approval").Action("approve")
 }
+
+// --- Handler 测试辅助 ---
+
+// constHandler 始终返回固定 action。
+type constHandler struct {
+	action string
+}
+
+func (h constHandler) Handle(ctx Context) (string, error) {
+	return h.action, nil
+}
+
+// errHandler 始终返回错误。
+type errHandler struct{}
+
+func (errHandler) Handle(ctx Context) (string, error) {
+	return "", errors.New("handler error")
+}
+
+// --- Engine.Run 测试 ---
+
+func TestEngineRun_SimpleFlow(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("execute").Handler(constHandler{action: "complete"})
+	wf.State("verify").Handler(constHandler{action: "complete"})
+	wf.State("done").Terminal()
+
+	wf.From("execute").To("verify").Action("complete")
+	wf.From("verify").To("done").Action("complete")
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "execute",
+	})
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if result.FinalState != "done" {
+		t.Fatalf("FinalState = %s, want done", result.FinalState)
+	}
+	if len(result.History) != 2 {
+		t.Fatalf("History length = %d, want 2", len(result.History))
+	}
+	// 验证流转顺序
+	if result.History[0].From != "execute" || result.History[0].To != "verify" {
+		t.Errorf("History[0] = %s -> %s, want execute -> verify",
+			result.History[0].From, result.History[0].To)
+	}
+	if result.History[1].From != "verify" || result.History[1].To != "done" {
+		t.Errorf("History[1] = %s -> %s, want verify -> done",
+			result.History[1].From, result.History[1].To)
+	}
+}
+
+func TestEngineRun_TerminalInitialState(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("done").Terminal()
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "done",
+	})
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if result.FinalState != "done" {
+		t.Fatalf("FinalState = %s, want done", result.FinalState)
+	}
+	if len(result.History) != 0 {
+		t.Fatalf("History should be empty, got %d entries", len(result.History))
+	}
+}
+
+func TestEngineRun_HandlerError(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("step1").Handler(errHandler{})
+	wf.State("step2").Terminal()
+	wf.From("step1").To("step2").Action("ok")
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "step1",
+	})
+	if err == nil {
+		t.Fatal("expected error from handler")
+	}
+	if result.FinalState != "step1" {
+		t.Fatalf("FinalState = %s, want step1", result.FinalState)
+	}
+}
+
+func TestEngineRun_NoHandler(t *testing.T) {
+	wf := NewWorkflow("test")
+	// 非终态且无 Handler → 配置错误
+	wf.State("orphan")
+
+	engine := NewEngine(wf)
+	_, err := engine.Run(RunRequest{
+		InitialState: "orphan",
+	})
+	if err == nil {
+		t.Fatal("expected error for state without handler")
+	}
+}
+
+func TestEngineRun_WithGuards(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("apply").Handler(constHandler{action: "approve"})
+	wf.State("finished").Terminal()
+
+	wf.From("apply").To("finished").
+		Action("approve").
+		Guard(testGuard{allow: false})
+
+	engine := NewEngine(wf)
+	_, err := engine.Run(RunRequest{
+		InitialState: "apply",
+	})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestEngineRun_RetryLoop(t *testing.T) {
+	// 模拟 verify 失败回退 execute 的场景，第二次 verify 通过
+	callCount := 0
+	verifyHandler := funcHandler(func(ctx Context) (string, error) {
+		callCount++
+		if callCount >= 2 {
+			return "complete", nil
+		}
+		return "fail", nil
+	})
+
+	wf := NewWorkflow("test")
+	wf.State("execute").Handler(constHandler{action: "complete"})
+	wf.State("verify").Handler(verifyHandler)
+	wf.State("done").Terminal()
+
+	wf.From("execute").To("verify").Action("complete")
+	wf.From("verify").To("done").Action("complete")
+	wf.From("verify").To("execute").Action("fail")
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "execute",
+	})
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if result.FinalState != "done" {
+		t.Fatalf("FinalState = %s, want done", result.FinalState)
+	}
+	// 流转历史：execute→verify (fail) → execute→verify (complete) → done = 4 次流转
+	if len(result.History) != 4 {
+		t.Fatalf("History length = %d, want 4", len(result.History))
+	}
+}
+
+func TestEngineRun_HistoryRecorded(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("a").Handler(constHandler{action: "go"})
+	wf.State("b").Handler(constHandler{action: "go"})
+	wf.State("c").Handler(constHandler{action: "go"})
+	wf.State("end").Terminal()
+
+	wf.From("a").To("b").Action("go")
+	wf.From("b").To("c").Action("go")
+	wf.From("c").To("end").Action("go")
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "a",
+		InstanceID:   "inst-1",
+	})
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if len(result.History) != 3 {
+		t.Fatalf("History length = %d, want 3", len(result.History))
+	}
+	// 验证 TransitionID 已生成
+	for i, h := range result.History {
+		if h.TransitionID == "" {
+			t.Errorf("History[%d].TransitionID is empty", i)
+		}
+	}
+}
+
+func TestEngineRun_StateNotFound(t *testing.T) {
+	wf := NewWorkflow("test")
+	wf.State("a").Terminal()
+
+	engine := NewEngine(wf)
+	_, err := engine.Run(RunRequest{
+		InitialState: "nonexistent",
+	})
+	if !errors.Is(err, ErrStateNotFound) {
+		t.Fatalf("expected ErrStateNotFound, got %v", err)
+	}
+}
+
+func TestEngineRun_WithContext(t *testing.T) {
+	// Handler 将数据写入 Context，验证下游可读取
+	wf := NewWorkflow("test")
+	wf.State("producer").Handler(funcHandler(func(ctx Context) (string, error) {
+		ctx["value"] = 42
+		return "done", nil
+	}))
+	wf.State("consumer").Handler(funcHandler(func(ctx Context) (string, error) {
+		v, ok := ctx["value"].(int)
+		if !ok || v != 42 {
+			return "", errors.New("context value missing")
+		}
+		return "finish", nil
+	}))
+	wf.State("end").Terminal()
+
+	wf.From("producer").To("consumer").Action("done")
+	wf.From("consumer").To("end").Action("finish")
+
+	engine := NewEngine(wf)
+	result, err := engine.Run(RunRequest{
+		InitialState: "producer",
+		Context:      make(Context),
+	})
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if result.FinalState != "end" {
+		t.Fatalf("FinalState = %s, want end", result.FinalState)
+	}
+}
+
+// funcHandler 将函数适配为 Handler 接口。
+type funcHandler func(ctx Context) (string, error)
+
+func (f funcHandler) Handle(ctx Context) (string, error) {
+	return f(ctx)
+}

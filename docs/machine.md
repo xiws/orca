@@ -55,10 +55,11 @@ pkg/workflow/
 ├── guard.go        # Guard 接口
 ├── condition.go    # Condition 接口
 ├── hook.go         # Hook 接口
+├── handler.go      # Handler 接口
 ├── state.go        # State + StateBuilder
 ├── transition.go   # Transition + TransitionBuilder
 ├── workflow.go     # Workflow（注册状态和流转）
-├── engine.go       # Engine + Execute
+├── engine.go       # Engine + Execute + Run
 └── workflow_test.go
 ```
 
@@ -85,6 +86,10 @@ type State struct {
 
     // Terminal 是否为终态。
     Terminal bool
+
+    // Handler 节点业务处理逻辑。
+    // Engine.Run 进入该状态时调用；终态节点可为 nil。
+    Handler Handler
 }
 ```
 
@@ -189,6 +194,35 @@ type Hook interface {
 
 ```
 Guard → Condition → Before Hook → 状态流转 → After Hook
+```
+
+### Handler — 节点业务逻辑
+
+```go
+type Handler interface {
+    Handle(ctx Context) (action string, err error)
+}
+```
+
+Handler 是状态节点的业务处理逻辑。`Engine.Run` 进入非终态时调用 Handler.Handle，返回的 action 决定走哪条 transition。
+
+示例：
+
+```go
+type ExecuteHandler struct{}
+
+func (ExecuteHandler) Handle(ctx workflow.Context) (string, error) {
+    // 执行业务逻辑...
+    return "complete", nil // 返回 "complete" 触发 execute→verify 流转
+}
+```
+
+使用：
+
+```go
+wf.State("execute").Handler(ExecuteHandler{})
+wf.State("verify").Handler(VerifyHandler{})
+wf.State("done").Terminal() // 终态不需要 Handler
 ```
 
 ---
@@ -673,6 +707,86 @@ default:
 
 ---
 
+## 8b. Engine.Run 自动执行
+
+除了单步 `Execute`，Engine 还提供 `Run` 方法自动驱动整个流程：
+
+### 输入
+
+```go
+type RunRequest struct {
+    InitialState string  // 初始状态
+    Context      Context // 执行上下文
+    InstanceID   string  // 实例 ID（可选）
+}
+```
+
+### 输出
+
+```go
+type RunResult struct {
+    FinalState string          // 最终状态
+    History    []ExecuteResult // 完整流转历史
+}
+```
+
+### 执行流程
+
+```
+RunRequest
+      |
+      v
+  查询当前状态 ─不存在─> ErrStateNotFound
+      |
+      v
+  终态？ ──YES──> 返回 RunResult
+      |
+     NO
+      |
+      v
+  State.Handler 为 nil？ ──YES──> 配置错误
+      |
+     NO
+      |
+      v
+  Handler.Handle(ctx) → action
+      |
+      v
+  查找 Transition（From + action）
+      |
+      v
+  Guard → Condition → Hook → 状态流转
+      |
+      v
+  记录到 History，更新当前状态
+      |
+      v
+  循环 ↑
+```
+
+### 示例
+
+```go
+wf := workflow.NewWorkflow("task-execution")
+wf.State("execute").Handler(ExecuteHandler{})
+wf.State("verify").Handler(VerifyHandler{})
+wf.State("done").Terminal()
+
+wf.From("execute").To("verify").Action("complete")
+wf.From("verify").To("done").Action("complete")
+wf.From("verify").To("execute").Action("fail") // 验证失败回退
+
+engine := workflow.NewEngine(wf)
+result, err := engine.Run(workflow.RunRequest{
+    InitialState: "execute",
+    InstanceID:   "task-001",
+})
+// Engine 自动驱动：execute → verify → done（或 verify → execute → verify → ... → done）
+fmt.Printf("最终状态: %s, 流转次数: %d\n", result.FinalState, len(result.History))
+```
+
+---
+
 ## 13. 设计原则
 
 1. **状态机不保存业务状态**：Execute 只返回结果，业务负责持久化。
@@ -686,6 +800,10 @@ default:
 ## 14. 后续扩展方向
 
 这个 Spec 的核心定位：**不是传统状态机，而是后端可编程 Workflow Engine。**
+
+已实现：
+- Handler 节点行为：状态可挂载 Handler，Engine.Run 自动驱动流转
+- 完整执行循环：进入状态 → Handler → 查找 transition → Guard/Condition/Hook → 流转 → 重复
 
 后续可以扩展：
 - 超时自动流转

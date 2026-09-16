@@ -125,3 +125,80 @@ func (e *Engine) findTransition(from, action string) *Transition {
 	}
 	return nil
 }
+
+// RunRequest 描述一次自动执行请求。
+type RunRequest struct {
+	// InitialState 初始状态。
+	InitialState string
+
+	// Context 执行上下文，在 Handler 和 Guard/Condition/Hook 间共享。
+	Context Context
+
+	// InstanceID 当前实例 ID（可选）。
+	InstanceID string
+}
+
+// RunResult 描述一次自动执行的结果。
+type RunResult struct {
+	// FinalState 最终状态。
+	FinalState string
+
+	// History 完整流转历史。
+	History []ExecuteResult
+}
+
+// Run 自动驱动状态流转，从 InitialState 开始循环执行：
+//
+//	进入状态 → 调用 Handler.Handle → 用返回的 action 查找 Transition
+//	→ Guard/Condition/Hook 校验 → 流转到下一状态 → 重复直到终态
+//
+// 终态节点的 Handler 不会被调用。
+func (e *Engine) Run(req RunRequest) (RunResult, error) {
+	currentState := req.InitialState
+	ctx := req.Context
+	if ctx == nil {
+		ctx = make(Context)
+	}
+
+	var history []ExecuteResult
+
+	for {
+		state, exists := e.workflow.states[currentState]
+		if !exists {
+			return RunResult{FinalState: currentState, History: history},
+				fmt.Errorf("%w: %s", ErrStateNotFound, currentState)
+		}
+
+		// 终态退出
+		if state.Terminal {
+			return RunResult{FinalState: currentState, History: history}, nil
+		}
+
+		// 非终态无 Handler → 配置错误
+		if state.Handler == nil {
+			return RunResult{FinalState: currentState, History: history},
+				fmt.Errorf("state %q has no handler and is not terminal", currentState)
+		}
+
+		// 执行节点业务逻辑
+		action, err := state.Handler.Handle(ctx)
+		if err != nil {
+			return RunResult{FinalState: currentState, History: history},
+				fmt.Errorf("handler failed at %q: %w", currentState, err)
+		}
+
+		// 用 action 查找 transition 并执行流转（复用 Execute 逻辑）
+		result, err := e.Execute(ExecuteRequest{
+			InstanceID:   req.InstanceID,
+			CurrentState: currentState,
+			Action:       action,
+			Context:      ctx,
+		})
+		if err != nil {
+			return RunResult{FinalState: currentState, History: history}, err
+		}
+
+		history = append(history, result)
+		currentState = result.To
+	}
+}
