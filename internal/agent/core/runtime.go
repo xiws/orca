@@ -263,6 +263,13 @@ func (r *Runtime) executeCommand(task *Task, calls []llm.ToolCall) error {
 
 // runTool 执行一个工具调用并渲染回复它的工具消息内容。
 func (r *Runtime) runTool(task *Task, call llm.ToolCall) (string, error) {
+	// 模式层工具过滤：如果 Session 声明了 AllowedTools，拒绝不在列表中的工具。
+	if allowed := task.SessionInfo.Provider.AllowedTools; allowed != nil {
+		if !isToolAllowed(call.Name, allowed) {
+			return "", fmt.Errorf("tool %q is not allowed in current mode", call.Name)
+		}
+	}
+
 	id := utils.GetSnowFlakeId()
 	opt, err := parse.OptionFromCall(id, call.Name, call.Arguments)
 	if err != nil {
@@ -327,6 +334,16 @@ func (r *Runtime) runSubTasks(parent *Task, result handler.CommandResult) string
 		out.WriteString("\n")
 	}
 	return out.String()
+}
+
+// isToolAllowed 检查 name 是否在 allowed 列表中。
+func isToolAllowed(name string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runtime) messageChannel(ch <-chan string) {

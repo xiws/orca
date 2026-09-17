@@ -145,3 +145,22 @@ func CreateTaskTool() Tool {
 func Tools() []Tool {
 	return []Tool{ReadTool(), WriteTool(), EditTool(), BashTool(), CreateTaskTool()}
 }
+
+// filterTools 根据 allowed 列表过滤可用工具。
+// allowed 为 nil 时返回全部工具，保持向后兼容。
+func filterTools(allowed []string) []Tool {
+	if allowed == nil {
+		return Tools()
+	}
+	set := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		set[name] = true
+	}
+	var filtered []Tool
+	for _, t := range Tools() {
+		if set[t.Function.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}

@@ -217,7 +217,7 @@ func (c *openAIClient) body(prompts []ChatMessage) []byte {
 		Stream:   true,
 	}
 	if c.info.SupportsTools {
-		request.Tools = Tools()
+		request.Tools = filterTools(c.info.AllowedTools)
 	}
 	payload, err := json.Marshal(request)
 	if err != nil {

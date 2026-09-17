@@ -19,6 +19,7 @@ type ModelInfo struct {
 	ContextWindow int
 	SupportsTools bool
 	Reasoning     bool
+	AllowedTools  []string // 模式层限制可用工具列表，nil 表示全部可用
 }
 
 // fileModel 是 models.json 中每个模型的存储格式。
