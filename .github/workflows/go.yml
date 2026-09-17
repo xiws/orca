@@ -1,0 +1,54 @@
+name: Build Latest
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.7"
+
+      - name: Create dist
+        run: mkdir -p dist
+
+      - name: Build Linux
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -o dist/orca-linux-amd64 ./cmd/cli
+
+      - name: Build Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -o dist/orca-windows-amd64.exe ./cmd/cli
+
+      - name: Build macOS
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+        run: go build -o dist/orca-darwin-amd64 ./cmd/cli
+
+      - name: Update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/orca-linux-amd64
+            dist/orca-windows-amd64.exe
+            dist/orca-darwin-amd64
