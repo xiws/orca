@@ -29,6 +29,7 @@ type CliArgs struct {
 	SystemPrompt string   // 系统提示词文件
 	Model        string   // 模型
 	Provider     string   // 模型 Provider
+	Mode         string   // 交互模式 (ask, code, agent 等)
 	Prompt       string   // 用户输入
 	SessionId    int64    // 恢复的 session id
 	SubCommand   string   // 子命令 (如 "session")
@@ -79,6 +80,9 @@ func ParseArgs() (*CliArgs, error) {
 	var sessionId int64
 	fs.Int64Var(&sessionId, "session", 0, "恢复指定的 session id")
 
+	// --mode
+	mode := fs.String("mode", "", "交互模式 (ask, code, agent 等)")
+
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// 在其他标志之后发现 -h/--help：flag 已通过 fs.Usage 打印了
 		// 帮助信息，然后返回 ErrHelp。
@@ -98,6 +102,7 @@ func ParseArgs() (*CliArgs, error) {
 		SystemPrompt: *systemPrompt,
 		Model:        *model,
 		Provider:     provider,
+		Mode:         *mode,
 		Prompt:       strings.Join(args, " "),
 		SessionId:    sessionId,
 	}, nil
@@ -135,6 +140,7 @@ Session Commands:
 Options:
   -p, --provider <name>  指定模型 Provider，须与 -m 一起使用（models.json 中的 provider key，如 otter、ollama）
   -m, --model <id>       指定模型 ID，须与 -p 一起使用（如 chatgpt、deepseek）
+  --mode <name>          交互模式（ask/code/plan/agent/review/test/terminal/deliberate）
   -s, --sp <file>        用文件内容覆盖系统提示词
   -f, --file <path>      附加文件到本次请求，可重复使用
   -session <id>          恢复指定的 session id 继续对话
@@ -142,6 +148,7 @@ Options:
 
 Examples:
   orca "为 internal/llm/openai.go 生成单元测试文件"
+  orca --mode ask "这个项目做了什么"
   orca -p otter -m chatgpt "这个项目做了什么"
   orca -f main.go -f README.md "解释这两个文件"
   orca -session 1234567890123456789 "继续完成上面的任务"
