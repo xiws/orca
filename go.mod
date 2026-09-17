@@ -7,7 +7,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/xiws/otter v0.0.0-00010101000000-000000000000
 	github.com/zbysir/hunkpatch v0.1.0
 )
 
@@ -51,6 +50,7 @@ require (
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/tam7t/hpkp v0.0.0-20160821193359-2b70b4024ed5 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
+	github.com/xiws/otter v0.0.0-20260917025144-097b8ff94590 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
@@ -60,5 +60,3 @@ require (
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
-
-replace github.com/xiws/otter => ../otter
