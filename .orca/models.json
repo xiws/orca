@@ -24,7 +24,7 @@
       "name": "deepseek-v4-flash",
       "api": "openai-completions",
       "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "apiKey": "sk-ws-H.EXMMLYE.oRvR.MEUCIQCtjI7G4uGcOLUbGDkeSmMXUNNJBTqJ00crQG09z2H-qgIgc4JXwtQY1KzIxUyJnTLuOYihujAVw8r-kRKnO3wf-us",
+      "apiKey": "sk-ws-H.EXMMLYE.oRvR.-qgIgc4JXwtQY1KzIxUyJnTLuOYihujAVw8r-kRKnO3wf-us",
       "models": [
         {
           "id": "deepseek-v4-flash",
