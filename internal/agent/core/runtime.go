@@ -317,11 +317,13 @@ func (r *Runtime) runSubTasks(parent *Task, result handler.CommandResult) string
 		child := NewTask(target.Description, target.Title)
 		child.SessionInfo.Provider = parent.SessionInfo.Provider
 		child.SessionInfo.ProjectPath = parent.SessionInfo.ProjectPath
-		child.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(PromptContext{
+		child.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(SystemPromptContext{
 			ProjectPath:   child.SessionInfo.ProjectPath,
 			ContextLength: child.SessionInfo.Provider.ContextWindow,
 		}))
-		child.SessionInfo.AppendToolPrompt()
+		if !child.SessionInfo.Provider.SupportsTools {
+			child.SessionInfo.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
+		}
 		child.SessionInfo.AppendMessage(llm.RoleUser, utils.GetSubtaskPrompt(NewTaskContext(target.Description, target.Title)))
 
 		fmt.Fprintf(&out, "\n--- sub-task %d: %s ---\n", index+1, target.Title)

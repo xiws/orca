@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/internal/tool"
 	"github.com/xiws/orca/pkg/utils"
@@ -54,17 +53,6 @@ func (s *Session) SetProvider(providerName, modelId string) {
 
 func (s *Session) AppendMessage(role, msg string) {
 	s.Append(llm.ChatMessage{Role: role, Content: msg})
-}
-
-// AppendToolPrompt 将自由格式 JSON 命令协议的描述追加到系统上下文。
-// 它让工具循环在没有原生函数调用的 Provider 上工作：这些 Provider
-// 不会接收工具定义，因此命令必须通过提示词传递。
-// 支持原生工具声明的 Provider 不会获得额外内容。
-func (s *Session) AppendToolPrompt() {
-	if s.Provider.SupportsTools {
-		return
-	}
-	s.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
 }
 
 // Append 记录一条完整构建的消息，填充调用方留下的零值身份字段，

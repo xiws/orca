@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+
+	"github.com/xiws/orca/internal/handler"
 )
 
 // defaultProvider / defaultModel 镜像 .orca/setting.json，选择下方实时集成测试使用的模型。
@@ -177,7 +179,7 @@ func TestRequestSendsToolsOnlyWhenModelSupportsThem(t *testing.T) {
 			if tt.wantTools == 0 {
 				return
 			}
-			wantNames := []string{ToolRead, ToolWrite, ToolEdit, ToolBash}
+			wantNames := []string{handler.CommandRead, handler.CommandWrite, handler.CommandEdit, handler.CommandBash}
 			for i, name := range wantNames {
 				if sent.Tools[i].Function.Name != name {
 					t.Errorf("tool %d = %q, want %q", i, sent.Tools[i].Function.Name, name)
@@ -201,8 +203,8 @@ func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
 		{Role: RoleSystem, Content: "You are a coding agent."},
 		{Role: RoleUser, Content: "Summarise a.md"},
 		{Role: RoleAssistant, ToolCalls: []ToolCall{
-			{ID: "call-1", Name: ToolRead, Arguments: `{"filename":"a.md"}`},
-			{ID: "call-2", Name: ToolBash, Arguments: `{"content":"pwd"}`},
+			{ID: "call-1", Name: handler.CommandRead, Arguments: `{"filename":"a.md"}`},
+			{ID: "call-2", Name: handler.CommandBash, Arguments: `{"content":"pwd"}`},
 		}},
 		{Role: RoleTool, ToolCallID: "call-1", Content: `{"ok":true}`},
 		{Role: RoleTool, ToolCallID: "call-2", Content: `{"ok":true}`},
@@ -230,7 +232,7 @@ func TestRequestBodyKeepsToolProtocolOrder(t *testing.T) {
 	if len(assistant.ToolCalls) != 2 {
 		t.Fatalf("assistant tool calls = %d, want 2", len(assistant.ToolCalls))
 	}
-	if got := assistant.ToolCalls[0]; got.ID != "call-1" || got.Type != ToolType || got.Function.Name != ToolRead || got.Function.Arguments != `{"filename":"a.md"}` {
+	if got := assistant.ToolCalls[0]; got.ID != "call-1" || got.Type != ToolType || got.Function.Name != handler.CommandRead || got.Function.Arguments != `{"filename":"a.md"}` {
 		t.Errorf("assistant tool call = %+v, want the read call in OpenAI shape", got)
 	}
 
@@ -272,8 +274,8 @@ data: [DONE]
 	}
 
 	want := []ToolCall{
-		{ID: "call_1", Name: ToolRead, Arguments: `{"filename":"README.md"}`},
-		{ID: "call_2", Name: ToolBash, Arguments: `{"content":"go test"}`},
+		{ID: "call_1", Name: handler.CommandRead, Arguments: `{"filename":"README.md"}`},
+		{ID: "call_2", Name: handler.CommandBash, Arguments: `{"content":"go test"}`},
 	}
 	if len(result.ToolCalls) != len(want) {
 		t.Fatalf("len(ToolCalls) = %d, want %d", len(result.ToolCalls), len(want))
@@ -370,7 +372,7 @@ func TestRequesterReadsReadmeWithToolCalling(t *testing.T) {
 	var read *ToolCall
 	for i, call := range result.ToolCalls {
 		t.Logf("tool call: id=%q name=%q arguments=%s", call.ID, call.Name, call.Arguments)
-		if call.Name == ToolRead {
+		if call.Name == handler.CommandRead {
 			read = &result.ToolCalls[i]
 		}
 	}

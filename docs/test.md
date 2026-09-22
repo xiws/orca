@@ -121,7 +121,7 @@ func main() {
 
 - **system 消息**（两者择一）：
   - 若用 `-s` / `-sp`（`SystemPrompt`）指定了自定义系统提示文件，就 `os.ReadFile` 读其内容作为 system 消息；
-  - 否则用默认 system 提示：`utils.GetSystemPrompt(PromptContext{ ProjectPath: utils.GetCurrentPath(), ContextLength: task.SessionInfo.Provider.ContextWindow })`。
+  - 否则用默认 system 提示：`utils.GetSystemPrompt(SystemPromptContext{ ProjectPath: utils.GetCurrentPath(), ContextLength: task.SessionInfo.Provider.ContextWindow })`。
 - **user 消息**：`userPrompt(args)` 渲染出来的内容。
 - **模型信息**：若同时指定了 `-p`（provider）和 `-m`（model），通过 `task.SessionInfo.SetProvider(provider, model)` 写入会话，覆盖默认 provider。
 

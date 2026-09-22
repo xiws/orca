@@ -2,9 +2,11 @@ package modes
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/roles"
+	"github.com/xiws/orca/internal/assets"
 	"github.com/xiws/orca/internal/llm"
 )
 
@@ -41,40 +43,15 @@ func (m *DeliberateMode) respond(task *core.Task) (string, error) {
 // critics 从多个视角对初始回答进行点评。
 // 返回各 Critic 的点评文本列表。
 func (m *DeliberateMode) critics(task *core.Task, answer string) []string {
+	// 从嵌入的 prompt 文件中解析各视角
+	sections := strings.Split(assets.DeliberatePrompt, "\n---\n")
 	prompts := []struct {
 		name   string
 		prompt string
 	}{
-		{
-			name: "架构视角",
-			prompt: `你是一位软件架构专家。请从架构设计角度点评以下回答：
-- 设计方案是否合理？
-- 是否符合常见架构模式？
-- 有没有更好的架构选择？
-- 可扩展性和可维护性如何？
-
-请直接给出你的分析和意见。`,
-		},
-		{
-			name: "边界与正确性视角",
-			prompt: `你是一位注重细节的工程师。请从边界条件和正确性角度点评以下回答：
-- 是否考虑了边界情况？
-- 逻辑是否严密？有无遗漏？
-- 错误处理是否充分？
-- 是否有隐含假设可能导致问题？
-
-请直接给出你的分析和意见。`,
-		},
-		{
-			name: "Devil's Advocate（魔鬼代言人）",
-			prompt: `你是 Devil's Advocate，专门挑刺的批评者。你的职责是：
-- 找出回答中的每一个弱点
-- 给出至少一个反例或风险场景
-- 质疑每一个假设
-- 提出最坏情况
-
-你必须找出至少一个问题。不要客气，不要说"总体来说不错"。直接指出问题。`,
-		},
+		{name: "架构视角", prompt: strings.TrimSpace(sections[0])},
+		{name: "边界与正确性视角", prompt: strings.TrimSpace(sections[1])},
+		{name: "Devil's Advocate（魔鬼代言人）", prompt: strings.TrimSpace(sections[2])},
 	}
 
 	var opinions []string

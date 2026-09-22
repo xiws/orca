@@ -70,50 +70,11 @@ func (b ToolEventBeforeHandler) Handle(ent event.Event) {
 		return
 	}
 
-	md := b.renderMarkdown(e)
+	md := renderBeforeMarkdown(e.tool, e.file, e.meta, e.reasoning)
 	rendered, err := renderer.Render(md)
 	if err != nil {
 		fmt.Printf("%s %s %s\n", e.tool, e.file, e.meta)
 		return
 	}
 	fmt.Print(rendered)
-}
-
-// renderMarkdown 构建工具 before-event 的 markdown 表示。
-func (b ToolEventBeforeHandler) renderMarkdown(e ToolBeforeEvent) string {
-	title := buildTitle(e.tool, e.file, e.meta)
-
-	if e.reasoning == "" {
-		return fmt.Sprintf("**%s**\n", title)
-	}
-	return fmt.Sprintf("**%s**\n> %s\n", title, e.reasoning)
-}
-
-// buildTitle 返回工具的 emoji 前缀标题行。
-func buildTitle(tool, file, meta string) string {
-	const (
-		emojiRead       = "📖"
-		emojiWrite      = "📝"
-		emojiEdit       = "✏️"
-		emojiBash       = "💻"
-		emojiCreateTask = "🎯"
-	)
-
-	switch tool {
-	case "read":
-		return fmt.Sprintf("%s Read `%s` (%s)", emojiRead, file, meta)
-	case "write":
-		return fmt.Sprintf("%s Write `%s` (%s)", emojiWrite, file, meta)
-	case "edit":
-		return fmt.Sprintf("%s Edit `%s` (%s)", emojiEdit, file, meta)
-	case "bash":
-		return fmt.Sprintf("%s $ `%s`", emojiBash, meta)
-	case "create_task":
-		return fmt.Sprintf("%s %s", emojiCreateTask, meta)
-	default:
-		if file != "" {
-			return fmt.Sprintf("`%s` — `%s` (%s)", tool, file, meta)
-		}
-		return fmt.Sprintf("`%s` (%s)", tool, meta)
-	}
 }

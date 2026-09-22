@@ -8,6 +8,7 @@ import (
 
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/modes"
+	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/internal/session"
 	"github.com/xiws/orca/pkg/utils"
@@ -85,7 +86,7 @@ func CreateTask(args *CliArgs) (*core.Task, error) {
 		}
 		task.SessionInfo.AppendMessage(llm.RoleSystem, string(buffer))
 	} else {
-		data := core.PromptContext{
+		data := core.SystemPromptContext{
 			ProjectPath:   utils.GetCurrentPath(),
 			ContextLength: task.SessionInfo.Provider.ContextWindow,
 		}
@@ -94,7 +95,9 @@ func CreateTask(args *CliArgs) (*core.Task, error) {
 			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(data))
 			// 不支持原生函数调用的 Provider 会在系统上下文中
 			// 接收命令协议描述
-			task.SessionInfo.AppendToolPrompt()
+			if !task.SessionInfo.Provider.SupportsTools {
+				task.SessionInfo.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
+			}
 		} else {
 			task.SessionInfo.AppendMessage(llm.RoleSystem, utils.GetOtterSystemPrompt(data))
 		}

@@ -23,8 +23,7 @@
 internal/agent/
 ├── core/                     # 运行时基座：所有模式的最终执行层
 │   ├── runtime.go            #   Runtime.RunTask：LLM ↔ 工具 循环（MaxTurns 上限）
-│   ├── task.go               #   Task + TaskStatus 生命周期
-│   ├── task_manager.go       #   TaskManager：状态流转合法性校验（validTransitions）
+│   ├── task.go               #   Task 数据结构
 │   ├── session.go            #   Session：消息时间线 / Provider / token 统计
 │   └── specification.go      #   Specification：结构化需求（Clarifier 的输出）
 │
@@ -104,7 +103,7 @@ func For(name string, rt *core.Runtime) Mode { ... }
 | `repair`  | Repair | 全部 | 恒为 `complete`（修复后回 execute） |
 | `human`   | HumanNode | 无（等人） | `APPROVED` → `complete`，`REJECTED` → `fail` |
 
-任务生命周期（`core.TaskStatus`，流转合法性由 `TaskManager.validTransitions` 校验）：
+任务生命周期（概念阶段，各模式按需走其中一段）：
 
 ```
 CREATED → CLARIFYING → PLANNING → RUNNING → VERIFYING → COMPLETED / FAILED

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/xiws/orca/internal/tool"
 	"github.com/xiws/orca/pkg/event"
-	"strings"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
@@ -83,112 +82,15 @@ func (b ToolAfterEventHandler) Handle(ent event.Event) {
 	)
 	if err != nil {
 		// 回退：打印原始内容
-		b.printRaw(e)
+		renderAfterRaw(e.tool, e.file, e.summary, e.content, e.ok)
 		return
 	}
 
-	md := b.renderMarkdown(e)
+	md := renderAfterMarkdown(e.tool, e.file, e.content, e.summary, e.ok, e.exitCode)
 	rendered, err := renderer.Render(md)
 	if err != nil {
-		b.printRaw(e)
+		renderAfterRaw(e.tool, e.file, e.summary, e.content, e.ok)
 		return
 	}
 	fmt.Print(rendered)
-}
-
-// renderMarkdown 构建工具 after-event 的 markdown 表示。
-func (b ToolAfterEventHandler) renderMarkdown(e ToolAfterEvent) string {
-	if !e.ok {
-		return fmt.Sprintf("❌ **%s** `%s` failed: %s\n", e.tool, e.file, e.summary)
-	}
-
-	switch e.tool {
-	case "read":
-		lang := detectLang(e.file)
-		return fmt.Sprintf("```%s\n%s\n```\n", lang, e.content)
-
-	case "write":
-		return fmt.Sprintf("✅ %s\n", e.summary)
-
-	case "edit":
-		return fmt.Sprintf("✅ %s\n", e.summary)
-
-	case "bash":
-		var out strings.Builder
-		exitWord := "ok"
-		if e.exitCode != 0 {
-			exitWord = fmt.Sprintf("exit code: %d", e.exitCode)
-		}
-		out.WriteString(fmt.Sprintf("```\n$ %s\n```\n", e.summary))
-		if e.content != "" {
-			out.WriteString(fmt.Sprintf("```\n%s\n```\n", e.content))
-		}
-		if e.exitCode != 0 {
-			out.WriteString(fmt.Sprintf("\n_%s_\n", exitWord))
-		}
-		return out.String()
-
-	default:
-		return fmt.Sprintf("```txt\n%s\n```\n", e.content)
-	}
-}
-
-// printRaw 以纯文本形式打印事件内容，作为 glamour 渲染失败时的回退。
-func (b ToolAfterEventHandler) printRaw(e ToolAfterEvent) {
-	if !e.ok {
-		fmt.Printf("❌ %s (%s): %s\n", e.tool, e.file, e.summary)
-		return
-	}
-	fmt.Printf("✔ %s (%s): %s\n", e.tool, e.file, e.summary)
-	if e.content != "" {
-		fmt.Println(e.content)
-	}
-}
-
-// detectLang 将文件扩展名映射到 markdown 代码块的语言标签。
-// 未知扩展名返回空字符串，渲染为无语法高亮的普通代码块。
-func detectLang(filePath string) string {
-	switch {
-	case strings.HasSuffix(filePath, ".go"):
-		return "go"
-	case strings.HasSuffix(filePath, ".md"):
-		return "markdown"
-	case strings.HasSuffix(filePath, ".json"):
-		return "json"
-	case strings.HasSuffix(filePath, ".yaml"),
-		strings.HasSuffix(filePath, ".yml"):
-		return "yaml"
-	case strings.HasSuffix(filePath, ".sh"):
-		return "bash"
-	case strings.HasSuffix(filePath, ".py"):
-		return "python"
-	case strings.HasSuffix(filePath, ".js"):
-		return "javascript"
-	case strings.HasSuffix(filePath, ".ts"):
-		return "typescript"
-	case strings.HasSuffix(filePath, ".html"):
-		return "html"
-	case strings.HasSuffix(filePath, ".css"):
-		return "css"
-	case strings.HasSuffix(filePath, ".toml"):
-		return "toml"
-	case strings.HasSuffix(filePath, ".mod"):
-		return "go"
-	case strings.HasSuffix(filePath, ".sum"):
-		return "go"
-	case strings.HasSuffix(filePath, ".rs"):
-		return "rust"
-	case strings.HasSuffix(filePath, ".rb"):
-		return "ruby"
-	case strings.HasSuffix(filePath, ".java"):
-		return "java"
-	case strings.HasSuffix(filePath, ".sql"):
-		return "sql"
-	case strings.HasSuffix(filePath, ".xml"):
-		return "xml"
-	case strings.HasSuffix(filePath, ".proto"):
-		return "protobuf"
-	default:
-		return ""
-	}
 }

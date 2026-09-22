@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
 )
 
 // Planner 是规划 Agent。
@@ -53,18 +52,13 @@ type PlanEdge struct {
 //
 // Planner 是只读 Agent：只给 read 工具，可以读取项目文件了解上下文。
 func (p *Planner) Plan(spec *core.Specification) (*WorkflowPlan, error) {
-	plannerTask := core.NewTask("create workflow plan", "plan")
-	plannerTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: plannerSystemPrompt},
-		{Role: llm.RoleUser, Content: formatSpecificationForPlanner(spec)},
-	}
-
-	err, result := p.Runtime.RunTask(plannerTask)
+	userInput := formatSpecificationForPlanner(spec)
+	output, err := runRole(p.Runtime, plannerSystemPrompt, userInput)
 	if err != nil {
 		return nil, fmt.Errorf("planner: %w", err)
 	}
 
-	return parseWorkflowPlan(result)
+	return parseWorkflowPlan(output)
 }
 
 // formatSpecificationForPlanner 将 Specification 格式化为 Planner 的输入。

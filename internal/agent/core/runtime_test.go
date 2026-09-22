@@ -334,7 +334,7 @@ func TestRunTaskLiveAgent(t *testing.T) {
 	}
 	var prompt = "编辑README.md文件，在后面追加目前tool_calling.go中做了些什么"
 	var task = NewTask(prompt, "")
-	data := PromptContext{
+	data := SystemPromptContext{
 		ProjectPath:   utils.GetEnv("PROJECT_PATH"),
 		ContextLength: 8192,
 	}
@@ -355,7 +355,7 @@ func TestSubRunTaskLiveAgent(t *testing.T) {
 	}
 	var prompt = "./internal/handler/read.go 目录下的read命令，如果读取到的文件太长，则后续添加到prompt的时候会超出上下文，这时候直接不返回读取的信息改为返回:fail command: read filename 超长，文件多少行多少字"
 	var task = NewTask(prompt, "")
-	data := PromptContext{
+	data := SystemPromptContext{
 		ProjectPath:   utils.GetEnv("PROJECT_PATH"),
 		ContextLength: 8192,
 	}

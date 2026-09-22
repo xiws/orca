@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
 )
 
 // Verifier 是验证 Agent。
@@ -39,18 +38,13 @@ type Issue struct {
 // Verifier 是只读 Agent：只给 read + bash 工具（运行测试）。
 // 输入：Specification（验收标准）+ Executor 的执行记录。
 func (v *Verifier) Verify(task *core.Task) (*VerifyResult, error) {
-	verifierTask := core.NewTask("verify task completion", "verify")
-	verifierTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: verifierSystemPrompt},
-		{Role: llm.RoleUser, Content: v.buildVerifyInput(task)},
-	}
-
-	err, result := v.Runtime.RunTask(verifierTask)
+	userInput := v.buildVerifyInput(task)
+	output, err := runRole(v.Runtime, verifierSystemPrompt, userInput)
 	if err != nil {
 		return nil, fmt.Errorf("verifier: %w", err)
 	}
 
-	return parseVerifyResult(result)
+	return parseVerifyResult(output)
 }
 
 // buildVerifyInput 构建 Verifier 的输入。

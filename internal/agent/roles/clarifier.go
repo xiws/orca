@@ -2,7 +2,6 @@ package roles
 
 import (
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
 )
 
 // Clarifier 是需求澄清 Agent。
@@ -46,18 +45,12 @@ type ClarifyResult struct {
 // Clarifier 是只读 Agent：只给 read 工具，可以读取项目文件了解上下文。
 // 通过 Runtime.RunTask 执行独立的 LLM 对话。
 func (c *Clarifier) Clarify(input string) (*ClarifyResult, error) {
-	task := core.NewTask(input, "clarify")
-	task.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: clarifierSystemPrompt},
-		{Role: llm.RoleUser, Content: input},
-	}
-
-	err, result := c.Runtime.RunTask(task)
+	output, err := runRole(c.Runtime, clarifierSystemPrompt, input)
 	if err != nil {
 		return nil, err
 	}
 
-	return parseClarifyResult(result)
+	return parseClarifyResult(output)
 }
 
 // parseClarifyResult 从 LLM 输出中解析 ClarifyResult。

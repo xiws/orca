@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
 )
 
 // Repair 是修复 Agent。
@@ -27,18 +26,13 @@ type RepairResult struct {
 // 输入：原始 Specification + VerifyResult（失败原因）。
 // 输出：修复指令，交给 Executor 执行。
 func (r *Repair) Repair(task *core.Task, verifyResult *VerifyResult) (*RepairResult, error) {
-	repairTask := core.NewTask("generate repair plan", "repair")
-	repairTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: repairSystemPrompt},
-		{Role: llm.RoleUser, Content: r.buildRepairInput(task, verifyResult)},
-	}
-
-	err, result := r.Runtime.RunTask(repairTask)
+	userInput := r.buildRepairInput(task, verifyResult)
+	output, err := runRole(r.Runtime, repairSystemPrompt, userInput)
 	if err != nil {
 		return nil, fmt.Errorf("repair: %w", err)
 	}
 
-	return parseRepairResult(result)
+	return parseRepairResult(output)
 }
 
 // buildRepairInput 构建 Repair 的输入。

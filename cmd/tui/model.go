@@ -11,6 +11,7 @@ import (
 
 	"github.com/xiws/orca/internal/agent/core"
 	ievent "github.com/xiws/orca/internal/event"
+	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
 	"github.com/xiws/orca/pkg/event"
 	"github.com/xiws/orca/pkg/utils"
@@ -124,12 +125,14 @@ func newModel() model {
 	session := core.NewSession()
 
 	// 系统提示只添加一次，后续轮次复用同一个 session 保留上下文
-	ctx := core.PromptContext{
+	ctx := core.SystemPromptContext{
 		ProjectPath:   session.ProjectPath,
 		ContextLength: session.Provider.ContextWindow,
 	}
 	session.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(ctx))
-	session.AppendToolPrompt()
+	if !session.Provider.SupportsTools {
+		session.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
+	}
 
 	return model{
 		runtime: runtime,
