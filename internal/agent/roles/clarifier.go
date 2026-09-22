@@ -2,6 +2,7 @@ package roles
 
 import (
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Clarifier 是需求澄清 Agent。
@@ -31,7 +32,7 @@ type ClarifyResult struct {
 	Status ClarifyStatus `json:"status"`
 
 	// Specification 结构化需求描述（Status=ready 或 assumption 时非空）。
-	Specification *core.Specification `json:"specification,omitempty"`
+	Specification *domain.Specification `json:"specification,omitempty"`
 
 	// Questions 需要用户回答的问题列表（Status=question 时非空）。
 	Questions []string `json:"questions,omitempty"`
@@ -42,10 +43,10 @@ type ClarifyResult struct {
 
 // Clarify 分析用户输入，输出结构化 Specification。
 //
-// Clarifier 是只读 Agent：只给 read 工具，可以读取项目文件了解上下文。
-// 通过 Runtime.RunTask 执行独立的 LLM 对话。
-func (c *Clarifier) Clarify(input string) (*ClarifyResult, error) {
-	output, err := runRole(c.Runtime, clarifierSystemPrompt, input)
+// Clarifier 只使用调用方已允许的 read 工具读取项目上下文。
+// 通过子 Invocation 执行独立的 LLM 对话。
+func (c *Clarifier) Clarify(parentInv *core.Invocation, input string) (*ClarifyResult, error) {
+	output, err := runRole(c.Runtime, parentInv, clarifierSystemPrompt, input, "read")
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func parseClarifyResult(output string) (*ClarifyResult, error) {
 	// 当前简化处理：将 LLM 输出视为 ready 状态
 	return &ClarifyResult{
 		Status: ClarifyReady,
-		Specification: &core.Specification{
+		Specification: &domain.Specification{
 			Goal: output,
 		},
 	}, nil

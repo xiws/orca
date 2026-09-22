@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Repair 是修复 Agent。
@@ -24,10 +25,10 @@ type RepairResult struct {
 // Repair 根据失败原因生成修复方案。
 //
 // 输入：原始 Specification + VerifyResult（失败原因）。
-// 输出：修复指令，交给 Executor 执行。
-func (r *Repair) Repair(task *core.Task, verifyResult *VerifyResult) (*RepairResult, error) {
+// 输出：修复指令，交给 Executor 执行；仅使用调用方已允许的 read 工具。
+func (r *Repair) Repair(parentInv *core.Invocation, task *domain.Task, verifyResult *VerifyResult) (*RepairResult, error) {
 	userInput := r.buildRepairInput(task, verifyResult)
-	output, err := runRole(r.Runtime, repairSystemPrompt, userInput)
+	output, err := runRole(r.Runtime, parentInv, repairSystemPrompt, userInput, "read")
 	if err != nil {
 		return nil, fmt.Errorf("repair: %w", err)
 	}
@@ -36,7 +37,7 @@ func (r *Repair) Repair(task *core.Task, verifyResult *VerifyResult) (*RepairRes
 }
 
 // buildRepairInput 构建 Repair 的输入。
-func (r *Repair) buildRepairInput(task *core.Task, verifyResult *VerifyResult) string {
+func (r *Repair) buildRepairInput(task *domain.Task, verifyResult *VerifyResult) string {
 	var input string
 
 	// 原始需求

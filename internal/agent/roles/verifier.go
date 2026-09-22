@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Verifier 是验证 Agent。
@@ -35,11 +36,11 @@ type Issue struct {
 
 // Verify 判断任务是否真正完成。
 //
-// Verifier 是只读 Agent：只给 read + bash 工具（运行测试）。
-// 输入：Specification（验收标准）+ Executor 的执行记录。
-func (v *Verifier) Verify(task *core.Task) (*VerifyResult, error) {
-	userInput := v.buildVerifyInput(task)
-	output, err := runRole(v.Runtime, verifierSystemPrompt, userInput)
+// Verifier 保留 read + bash 验证工具，且不超过调用方权限；bash 并非只读工具。
+// 输入：Specification（验收标准）+ 显式传入的 Executor 执行结果。
+func (v *Verifier) Verify(parentInv *core.Invocation, task *domain.Task, result string) (*VerifyResult, error) {
+	userInput := v.buildVerifyInput(task, result)
+	output, err := runRole(v.Runtime, parentInv, verifierSystemPrompt, userInput, "read", "bash")
 	if err != nil {
 		return nil, fmt.Errorf("verifier: %w", err)
 	}
@@ -47,8 +48,8 @@ func (v *Verifier) Verify(task *core.Task) (*VerifyResult, error) {
 	return parseVerifyResult(output)
 }
 
-// buildVerifyInput 构建 Verifier 的输入。
-func (v *Verifier) buildVerifyInput(task *core.Task) string {
+// buildVerifyInput 构建 Verifier 的输入，不改变任务原始需求。
+func (v *Verifier) buildVerifyInput(task *domain.Task, result string) string {
 	var input string
 
 	// 验收标准
@@ -65,9 +66,9 @@ func (v *Verifier) buildVerifyInput(task *core.Task) string {
 		input += "## 原始需求\n" + task.Input + "\n\n"
 	}
 
-	// Executor 的执行结果
-	if task.TaskResult != "" {
-		input += "## Executor 的执行结果\n" + task.TaskResult + "\n\n"
+	// Executor 的执行结果来自当前执行，不存储在任务领域对象中。
+	if result != "" {
+		input += "## Executor 的执行结果\n" + result + "\n\n"
 	}
 
 	input += "请验证上述任务是否真正完成。检查：\n"

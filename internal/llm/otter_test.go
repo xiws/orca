@@ -219,6 +219,38 @@ func TestOtterRequesterErrorEventFailsRequestAndKeepsTail(t *testing.T) {
 	}
 }
 
+func TestOtterFreshInvocationReplaysHistoricalAnswers(t *testing.T) {
+	fake := &fakeRemoteBackend{remoteID: "fresh-conversation"}
+	fake.replies = [][]provider.StreamEvent{
+		{{Type: "text", Content: "new answer"}, {Type: "meta", ResponseMessageID: 7}, {Type: "done"}},
+		{{Type: "text", Content: "follow-up answer"}, {Type: "done"}},
+	}
+	requester := newFakeOtterRequester(fake)
+	messages := []ChatMessage{
+		{Role: RoleSystem, Content: "new system"},
+		{Role: RoleUser, Content: "choose an approach"},
+		{Role: RoleAssistant, Content: "choose approach B"},
+		{Role: RoleUser, Content: "continue that approach"},
+	}
+	if result := requester.Request(messages, nil); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	want := "new system\n\nchoose an approach\n\nPrevious assistant response:\nchoose approach B\n\ncontinue that approach"
+	if fake.requests[0].Prompt != want || fake.requests[0].ChatSessionID != "fresh-conversation" || fake.requests[0].ParentMessageID != 0 {
+		t.Fatalf("fresh request lost history or inherited a cursor: %+v", fake.requests[0])
+	}
+	messages = append(messages,
+		ChatMessage{Role: RoleAssistant, Content: "new answer"},
+		ChatMessage{Role: RoleUser, Content: "follow-up"},
+	)
+	if result := requester.Request(messages, nil); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	if fake.requests[1].Prompt != "follow-up" || fake.requests[1].ParentMessageID != 7 || fake.createNum != 1 {
+		t.Fatalf("same invocation replayed an existing remote answer: %+v", fake.requests[1])
+	}
+}
+
 // TestOtterRequesterRejectsEmptyTail 覆盖没有新消息可发送的请求，
 // 否则会向平台发送空消息。
 func TestOtterRequesterRejectsEmptyTail(t *testing.T) {

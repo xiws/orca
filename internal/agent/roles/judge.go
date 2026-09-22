@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
 )
 
 // Judge 是汇总判断 Agent。
@@ -20,14 +19,9 @@ type Judge struct {
 // input: 原始问题
 // answer: Responder 的初始回答
 // opinions: 各 Critic 的点评列表
-func (j *Judge) Synthesize(input, answer string, opinions []string) (string, error) {
-	task := core.NewTask("synthesize final answer", "judge")
-	task.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: judgeSystemPrompt},
-		{Role: llm.RoleUser, Content: formatJudgeInput(input, answer, opinions)},
-	}
-
-	err, result := j.Runtime.RunTask(task)
+// Judge 仅使用调用方已允许的 read 工具。
+func (j *Judge) Synthesize(parentInv *core.Invocation, input, answer string, opinions []string) (string, error) {
+	result, err := runRole(j.Runtime, parentInv, judgeSystemPrompt, formatJudgeInput(input, answer, opinions), "read")
 	if err != nil {
 		return "", fmt.Errorf("judge: %w", err)
 	}

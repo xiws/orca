@@ -6,6 +6,7 @@ import (
 
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/roles"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // PlanMode 计划模式：分析需求 → 制定计划，但暂不执行。
@@ -16,10 +17,10 @@ type PlanMode struct {
 
 func (m *PlanMode) Name() string { return "plan" }
 
-func (m *PlanMode) Run(task *core.Task) (string, error) {
+func (m *PlanMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
 	// CLARIFYING：Clarifier 输出 Specification（question 时与用户往返）
 	clarifier := &roles.Clarifier{Runtime: m.Runtime}
-	result, err := clarifier.Clarify(task.Input)
+	result, err := clarifier.Clarify(inv, task.Input)
 	if err != nil {
 		return "", fmt.Errorf("plan mode clarify: %w", err)
 	}
@@ -27,7 +28,7 @@ func (m *PlanMode) Run(task *core.Task) (string, error) {
 
 	// PLANNING：Specification → WorkflowPlan
 	planner := &roles.Planner{Runtime: m.Runtime}
-	plan, err := planner.Plan(task.Specification)
+	plan, err := planner.Plan(inv, task.Specification)
 	if err != nil {
 		return "", fmt.Errorf("plan mode plan: %w", err)
 	}

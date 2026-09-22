@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Mode 是一个交互模式的编排器。
@@ -13,8 +14,8 @@ type Mode interface {
 	// Name 返回模式名，供 CLI 参数与 TUI 切换使用。
 	Name() string
 
-	// Run 执行任务直到结束，返回最终答复。
-	Run(task *core.Task) (string, error)
+	// Run 编排任务，在独立的 Invocation 中执行并返回最终答复。
+	Run(task *domain.Task, inv *core.Invocation) (string, error)
 }
 
 // For 按名称构造模式（默认 code）。

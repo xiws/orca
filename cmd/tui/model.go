@@ -10,9 +10,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/agent/modes"
+	"github.com/xiws/orca/internal/app"
+	"github.com/xiws/orca/internal/domain"
 	ievent "github.com/xiws/orca/internal/event"
-	"github.com/xiws/orca/internal/handler"
 	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/session"
+	"github.com/xiws/orca/internal/tool"
 	"github.com/xiws/orca/pkg/event"
 	"github.com/xiws/orca/pkg/utils"
 )
@@ -98,8 +102,12 @@ type model struct {
 	viewport viewport.Model
 	input    textinput.Model
 	runtime  *core.Runtime
-	session  *core.Session
+	record   *session.Record
+	provider llm.ModelInfo
+	executor app.Executor
 	msgCh    <-chan string
+	events   chan tea.Msg
+	done     chan struct{}
 
 	chatHistory     []string
 	status          string
@@ -112,48 +120,40 @@ type model struct {
 
 func newModel() model {
 	msgCh := make(chan string, 100)
-
+	projectPath := utils.GetCurrentPath()
 	runtime := core.NewRuntime(
 		core.WithSkipDefaultHandlers(),
 		core.WithMsgChannel(msgCh),
+		core.WithWorkspace(projectPath),
 	)
-
-	// 订阅 TUI 事件处理器
 	_ = runtime.Subscribe(ievent.ToolBeforeEvent{}, tuiToolBeforeHandler{})
 	_ = runtime.Subscribe(ievent.ToolAfterEvent{}, tuiToolAfterHandler{})
-
-	session := core.NewSession()
-
-	// 系统提示只添加一次，后续轮次复用同一个 session 保留上下文
-	ctx := core.SystemPromptContext{
-		ProjectPath:   session.ProjectPath,
-		ContextLength: session.Provider.ContextWindow,
-	}
-	session.AppendMessage(llm.RoleSystem, utils.GetSystemPrompt(ctx))
-	if !session.Provider.SupportsTools {
-		session.AppendMessage(llm.RoleSystem, handler.ToolPrompt())
-	}
-
 	return model{
-		runtime: runtime,
-		session: session,
-		msgCh:   msgCh,
-		status:  "Ready",
-		state:   stateIdle,
+		runtime:  runtime,
+		record:   &session.Record{Session: domain.NewSession(projectPath)},
+		provider: llm.GetProvider(tool.Get(tool.KeyDefaultProvider), tool.Get(tool.KeyDefaultModel)),
+		executor: modes.For("code", runtime),
+		msgCh:    msgCh,
+		events:   make(chan tea.Msg, 100),
+		done:     make(chan struct{}),
+		status:   "Ready",
+		state:    stateIdle,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	// 启动流式内容桥接 goroutine：从 runtime msg channel → Bubble Tea 消息
-	go func() {
-		for chunk := range m.msgCh {
-			if programRef != nil {
-				programRef.Send(streamChunkMsg(chunk))
-			}
-		}
-	}()
-
 	return textinput.Blink
+}
+
+func (m model) waitForEvent() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case msg := <-m.events:
+			return msg
+		case <-m.done:
+			return nil
+		}
+	}
 }
 
 // ── Update ──────────────────────────────────────────────────
@@ -163,17 +163,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-
-		m.viewport = viewport.New(msg.Width, msg.Height-4)
-		m.viewport.SetContent(welcomeText())
-		m.viewport.HighPerformanceRendering = false
-
-		m.input = textinput.New()
-		m.input.Placeholder = "Enter a task... (Ctrl+C to quit)"
-		m.input.CharLimit = 2000
-		m.input.Width = m.width - 4
-		m.input.Focus()
-
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, max(1, msg.Height-4))
+			m.viewport.SetContent(welcomeText())
+			m.input = textinput.New()
+			m.input.Placeholder = "Enter a task... (Ctrl+C to quit)"
+			m.input.CharLimit = 2000
+			m.input.Focus()
+		}
+		m.viewport.Width = max(1, msg.Width)
+		m.viewport.Height = max(1, msg.Height-4)
+		m.input.Width = max(1, msg.Width-4)
 		m.ready = true
 		return m, nil
 
@@ -194,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(strings.Join(m.chatHistory, "\n"))
 				m.viewport.GotoBottom()
 			}
-			return m, m.runAgent(value)
+			return m, tea.Batch(m.runAgent(value), m.waitForEvent())
 		}
 
 	case streamChunkMsg:
@@ -215,9 +215,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(strings.Join(m.chatHistory, "\n"))
 			m.viewport.GotoBottom()
 		}
-		return m, nil
+		return m, m.waitForEvent()
 
 	case toolStatusMsg:
+		if m.state == stateIdle {
+			return m, nil
+		}
 		m.streamingActive = false // 工具执行中断流式上下文
 		m.chatHistory = appendChat(m.chatHistory, "\n"+string(msg))
 		m.status = "🔧 Running tool..."
@@ -229,12 +232,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case agentResultMsg:
+		alreadyDisplayed := m.streamingActive && len(m.chatHistory) > 0 && strings.HasSuffix(m.chatHistory[len(m.chatHistory)-1], msg.result)
 		m.state = stateIdle
 		m.streamingActive = false
 		m.status = "Ready"
 		if msg.err != nil {
 			m.chatHistory = appendChat(m.chatHistory, "\n❌ Error: "+msg.err.Error())
-		} else if msg.result != "" {
+		} else if msg.result != "" && !alreadyDisplayed {
 			m.chatHistory = appendChat(m.chatHistory, "\n\n"+msg.result)
 		}
 		if m.ready {
@@ -261,21 +265,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── Agent 执行 ──────────────────────────────────────────────
 
-// runAgent 在后台 goroutine 中执行一轮 Agent 对话。
-// 复用 m.session 保留跨轮次的消息历史，使 LLM 能看到之前的对话上下文。
 func (m model) runAgent(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		// 追加用户消息到已有会话（系统提示已在 newModel 中添加）
-		m.session.AppendMessage(llm.RoleUser, prompt)
-
-		task := &core.Task{
-			Id:          m.session.Id,
-			SessionInfo: m.session,
-			Input:       prompt,
+		finished := make(chan agentResultMsg, 1)
+		go func() {
+			turn := app.Prepare(m.record, app.Request{Input: prompt, Provider: m.provider})
+			result, err := app.Execute(m.record, turn, m.executor)
+			finished <- agentResultMsg{err: err, result: result}
+		}()
+		emit := func(msg tea.Msg) {
+			select {
+			case m.events <- msg:
+			case <-m.done:
+			}
 		}
-
-		err, result := m.runtime.RunTask(task)
-		return agentResultMsg{err: err, result: result}
+		chunks := m.msgCh
+		for {
+			select {
+			case chunk, ok := <-chunks:
+				if !ok {
+					chunks = nil
+					continue
+				}
+				emit(streamChunkMsg(chunk))
+			case result := <-finished:
+				// Request 返回前已发送全部分块；完成事件必须排在它们之后。
+				for {
+					select {
+					case chunk, ok := <-chunks:
+						if !ok {
+							chunks = nil
+							continue
+						}
+						emit(streamChunkMsg(chunk))
+					default:
+						emit(result)
+						return nil
+					}
+				}
+			}
+		}
 	}
 }
 

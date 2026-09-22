@@ -5,46 +5,58 @@ import (
 
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/roles"
+	"github.com/xiws/orca/internal/domain"
+	"github.com/xiws/orca/internal/llm"
 )
 
-// TestMode 测试模式：写测试、跑测试、分析失败。
-// 简化版实现：Executor 全工具写测试 + Verifier 跑测试验证。
+// TestMode 测试模式：执行并验证，未通过时最多生成和执行一次修复方案，再次验证。
 type TestMode struct {
 	Runtime *core.Runtime
 }
 
 func (m *TestMode) Name() string { return "test" }
 
-func (m *TestMode) Run(task *core.Task) (string, error) {
-	// 1. Executor 全工具写/改测试
+func (m *TestMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
+	// 1. Executor 在当前 Invocation 中写/改测试。
 	executor := &roles.Executor{Runtime: m.Runtime}
-	result, err := executor.Execute(task)
+	result, err := executor.Execute(inv)
 	if err != nil {
 		return "", fmt.Errorf("test mode execute: %w", err)
 	}
 
-	// 2. Verifier 只读跑测试验证
+	// 2. Verifier 使用独立上下文验证显式传入的执行结果。
 	verifier := &roles.Verifier{Runtime: m.Runtime}
-	verifyResult, err := verifier.Verify(task)
+	verifyResult, err := verifier.Verify(inv, task, result)
 	if err != nil {
-		// 验证失败不阻塞，返回 Executor 结果
-		return result, nil
+		return result, fmt.Errorf("test mode verify: %w", err)
 	}
-
 	if verifyResult.Passed {
 		return result, nil
 	}
 
-	// 3. 验证未通过：尝试 Repair 生成修复方案
+	// 3. 验证未通过：仅尝试一次修复，计划追加为消息，不修改 Task.Input。
 	repair := &roles.Repair{Runtime: m.Runtime}
-	repairResult, err := repair.Repair(task, verifyResult)
+	repairResult, err := repair.Repair(inv, task, verifyResult)
 	if err != nil {
-		// 修复方案生成失败，返回当前结果
-		return result, nil
+		return result, fmt.Errorf("test mode repair: %w", err)
+	}
+	appendRepairInstruction(inv, repairResult.FixPlan)
+	result, err = executor.Execute(inv)
+	if err != nil {
+		return "", fmt.Errorf("test mode execute repair: %w", err)
 	}
 
-	// 将修复方案追加到任务输入，再执行一次
-	task.Input += "\n\n## 修复方案\n" + repairResult.FixPlan
-	task.TaskResult = ""
-	return executor.Execute(task)
+	// 4. 必须重新验证修复后的执行结果，不能把执行成功当作验证通过。
+	verifyResult, err = verifier.Verify(inv, task, result)
+	if err != nil {
+		return result, fmt.Errorf("test mode verify repair: %w", err)
+	}
+	if !verifyResult.Passed {
+		return result, fmt.Errorf("test mode: verification failed after one repair: %s", verifyResult.Summary)
+	}
+	return result, nil
+}
+
+func appendRepairInstruction(inv *core.Invocation, fixPlan string) {
+	inv.AppendMessage(llm.RoleUser, "## 修复方案\n"+fixPlan)
 }

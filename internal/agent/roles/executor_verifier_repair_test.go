@@ -1,9 +1,12 @@
 package roles
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
+	"github.com/xiws/orca/internal/llm"
 )
 
 func TestFormatSpecification_Nil(t *testing.T) {
@@ -14,9 +17,9 @@ func TestFormatSpecification_Nil(t *testing.T) {
 }
 
 func TestFormatSpecification_Full(t *testing.T) {
-	spec := &core.Specification{
+	spec := &domain.Specification{
 		Goal: "优化性能",
-		Requirements: []core.Requirement{
+		Requirements: []domain.Requirement{
 			{ID: "R1", Description: "增加缓存", Priority: "high"},
 			{ID: "R2", Description: "优化查询", Priority: "medium"},
 		},
@@ -50,15 +53,13 @@ func TestFormatSpecification_Full(t *testing.T) {
 
 func TestVerifier_BuildVerifyInput(t *testing.T) {
 	verifier := &Verifier{}
-	task := &core.Task{
-		Input:      "实现功能",
-		TaskResult: "已完成所有修改",
-		Specification: &core.Specification{
-			AcceptanceCriteria: []string{"测试通过", "编译成功"},
-		},
+	task := domain.NewTask("实现功能", "verify", domain.SessionID(7))
+	task.Specification = &domain.Specification{
+		AcceptanceCriteria: []string{"测试通过", "编译成功"},
 	}
+	original := *task
 
-	input := verifier.buildVerifyInput(task)
+	input := verifier.buildVerifyInput(task, "已完成所有修改")
 	if input == "" {
 		t.Error("expected non-empty verify input")
 	}
@@ -70,7 +71,18 @@ func TestVerifier_BuildVerifyInput(t *testing.T) {
 		t.Error("expected original input in verify input")
 	}
 	if !containsStr(input, "已完成所有修改") {
-		t.Error("expected task result in verify input")
+		t.Error("expected explicit execution result in verify input")
+	}
+
+	retryInput := verifier.buildVerifyInput(task, "修复后的执行结果")
+	if !containsStr(retryInput, "修复后的执行结果") || containsStr(retryInput, "已完成所有修改") {
+		t.Error("verification reused a stale execution result")
+	}
+	if emptyInput := verifier.buildVerifyInput(task, ""); containsStr(emptyInput, "## Executor 的执行结果") {
+		t.Error("empty explicit result should not reuse earlier execution output")
+	}
+	if !reflect.DeepEqual(*task, original) {
+		t.Error("building verification input changed the task")
 	}
 }
 
@@ -120,9 +132,9 @@ func TestContainsKeyword(t *testing.T) {
 
 func TestRepair_BuildRepairInput(t *testing.T) {
 	repair := &Repair{}
-	task := &core.Task{
+	task := &domain.Task{
 		Input: "实现功能",
-		Specification: &core.Specification{
+		Specification: &domain.Specification{
 			AcceptanceCriteria: []string{"测试通过"},
 		},
 	}
@@ -147,6 +159,78 @@ func TestRepair_BuildRepairInput(t *testing.T) {
 	}
 	if !containsStr(input, "缺少 import") {
 		t.Error("expected issue description in repair input")
+	}
+	if task.Input != "实现功能" {
+		t.Error("building repair input changed the original task input")
+	}
+}
+
+func TestRestrictToolsIntersection(t *testing.T) {
+	tests := []struct {
+		name      string
+		inherited []string
+		allowed   []string
+		want      []string
+	}{
+		{name: "unrestricted", allowed: []string{"read"}, want: []string{"read"}},
+		{name: "explicitly disabled", inherited: []string{}, allowed: []string{"read"}, want: []string{}},
+		{name: "no overlap", inherited: []string{"bash"}, allowed: []string{"read"}, want: []string{}},
+		{name: "read only", inherited: []string{"read"}, allowed: []string{"read", "bash"}, want: []string{"read"}},
+		{name: "verification", inherited: []string{"read", "write", "bash"}, allowed: []string{"read", "bash"}, want: []string{"read", "bash"}},
+		{name: "no role tools", inherited: []string{"read"}, want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := core.NewInvocation(domain.TaskID(1), "/workspace", llm.ModelInfo{AllowedTools: tt.inherited})
+			RestrictTools(inv, tt.allowed...)
+			if !reflect.DeepEqual(inv.Provider.AllowedTools, tt.want) {
+				t.Errorf("tools = %#v, want %#v", inv.Provider.AllowedTools, tt.want)
+			}
+			// 再次收紧不能让之前禁用的工具重新出现。
+			RestrictTools(inv, "read", "bash", "write")
+			if !reflect.DeepEqual(inv.Provider.AllowedTools, tt.want) {
+				t.Errorf("repeated restriction expanded tools to %#v", inv.Provider.AllowedTools)
+			}
+		})
+	}
+}
+
+func TestRoleInvocationIsolation(t *testing.T) {
+	provider := llm.ModelInfo{
+		Provider: "caller-provider", ModelID: "caller-model", BaseURL: "https://caller.invalid",
+		AllowedTools: []string{"read", "write", "bash"},
+	}
+	parent := core.NewInvocation(domain.TaskID(42), "/caller/workspace", provider)
+	parent.AppendMessage(llm.RoleUser, "parent input")
+	parent.TotalUsage = llm.Usage{TotalTokens: 12}
+	parent.OtterState = &llm.OtterState{ChatSessionID: "parent-session", Delivered: 1}
+	messages := append([]llm.ChatMessage(nil), parent.Messages...)
+
+	child := newRoleInvocation(parent, "system prompt", "role input", "read", "bash")
+	if len(parent.Children) != 1 || parent.Children[0] != child {
+		t.Fatal("role invocation is not attached to its parent")
+	}
+	if child.ID == parent.ID || child.TaskID != parent.TaskID || child.ProjectPath != parent.ProjectPath {
+		t.Error("role must use a new invocation for the same task and workspace")
+	}
+	wantProvider := provider
+	wantProvider.AllowedTools = []string{"read", "bash"}
+	if !reflect.DeepEqual(child.Provider, wantProvider) {
+		t.Errorf("role did not inherit caller provider: %+v", child.Provider)
+	}
+	if child.TotalUsage != (llm.Usage{}) || child.OtterState != nil || len(child.Children) != 0 {
+		t.Error("role inherited execution state from parent")
+	}
+	if len(child.Messages) != 2 || child.Messages[0].Role != llm.RoleSystem || child.Messages[0].Content != "system prompt" || child.Messages[1].Role != llm.RoleUser || child.Messages[1].Content != "role input" {
+		t.Fatalf("unexpected role messages: %+v", child.Messages)
+	}
+
+	child.Messages[0].Content = "changed"
+	child.Provider.AllowedTools[0] = "changed"
+	child.TotalUsage.TotalTokens = 99
+	child.OtterState = &llm.OtterState{ChatSessionID: "child-session"}
+	if !reflect.DeepEqual(parent.Messages, messages) || !reflect.DeepEqual(parent.Provider, provider) || parent.TotalUsage.TotalTokens != 12 || parent.OtterState.ChatSessionID != "parent-session" {
+		t.Error("role execution state leaked into parent")
 	}
 }
 

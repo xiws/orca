@@ -186,8 +186,7 @@ func (o *otterRequester) Request(prompts []ChatMessage, msgs chan<- string) Resu
 	return result
 }
 
-// pendingPrompt 渲染平台尚未看到的消息。助手轮次被跳过，
-// 因为平台会话已包含模型说过的所有内容；重新发送会重复对话。
+// 只有当前远端会话生成的助手回复可以省略，新执行必须重放已确认的历史回复。
 func (o *otterRequester) pendingPrompt(prompts []ChatMessage) string {
 	if o.delivered >= len(prompts) {
 		return ""
@@ -199,6 +198,10 @@ func (o *otterRequester) pendingPrompt(prompts []ChatMessage) string {
 		switch message.Role {
 		case RoleSystem, RoleUser:
 			segment = message.Content
+		case RoleAssistant:
+			if o.delivered == 0 && message.Content != "" {
+				segment = "Previous assistant response:\n" + message.Content
+			}
 		case RoleTool:
 			segment = toolResultSegment(prompts, index)
 		default:

@@ -4,31 +4,23 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Executor 是执行 Agent。
-// 它负责实际完成任务，调用工具（read/write/edit/bash）完成工作。
-// Executor 本质上是现有 Runtime.execute() 循环的封装。
+// 它负责实际完成任务，在调用方的工具权限内完成工作。
+// Executor 本质上是 Runtime.Run 的封装。
 type Executor struct {
 	Runtime *core.Runtime
 }
 
-// Execute 执行一个任务。
-func (e *Executor) Execute(task *core.Task) (string, error) {
-	if task.SessionInfo == nil {
-		task.SessionInfo = core.NewSession()
-	}
-
-	err, result := e.Runtime.RunTask(task)
-	if err != nil {
-		return "", fmt.Errorf("executor: %w", err)
-	}
-
-	return result, nil
+// Execute 执行调用方提供的 Invocation，不创建 Task 或 Session。
+func (e *Executor) Execute(inv *core.Invocation) (string, error) {
+	return e.Runtime.Run(inv)
 }
 
 // FormatSpecification 将 Specification 格式化为可读文本。
-func FormatSpecification(spec *core.Specification) string {
+func FormatSpecification(spec *domain.Specification) string {
 	if spec == nil {
 		return ""
 	}

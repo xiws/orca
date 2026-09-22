@@ -43,7 +43,7 @@ const verifierSystemPrompt = `你是一个验证 Agent。
 - 运行测试命令（go test, npm test 等）
 - 检查编译状态（go build, tsc 等）
 
-但你不能修改代码。你是只读裁判。
+不要修改代码。bash 并非只读工具，应仅用于运行验证命令。
 
 ## 注意事项
 
