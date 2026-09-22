@@ -14,6 +14,7 @@ type AskMode struct {
 func (m *AskMode) Name() string { return "ask" }
 
 func (m *AskMode) Run(task *core.Task) (string, error) {
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"read"}}
+	task.SessionInfo.Provider.AllowedTools = []string{"read"}
+	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(task)
 }

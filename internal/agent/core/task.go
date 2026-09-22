@@ -40,10 +40,6 @@ type Task struct {
 	RetryCount    int            `json:"retry_count"` // 修复重试计数
 	MaxRetries    int            `json:"max_retries"` // 最大重试次数
 	History       []TaskEvent    `json:"history"`     // 状态变更历史
-
-	// 向后兼容字段，后续逐步迁移。
-	TaskTarget string `json:"task_target"`
-	TaskTitle  string `json:"task_title"`
 }
 
 // NewTask 创建一个新任务，初始状态为 CREATED。
@@ -57,9 +53,6 @@ func NewTask(input, title string) *Task {
 		Title:       title,
 		Status:      TaskCreated,
 		MaxRetries:  3,
-		// 向后兼容
-		TaskTarget: input,
-		TaskTitle:  title,
 	}
 }
 

@@ -13,6 +13,7 @@ type TerminalMode struct {
 func (m *TerminalMode) Name() string { return "terminal" }
 
 func (m *TerminalMode) Run(task *core.Task) (string, error) {
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"bash"}}
+	task.SessionInfo.Provider.AllowedTools = []string{"bash"}
+	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(task)
 }

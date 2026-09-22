@@ -6,58 +6,8 @@ import (
 	"github.com/xiws/orca/internal/agent/core"
 )
 
-func TestExecutor_BuildContext_WithSpecification(t *testing.T) {
-	executor := &Executor{}
-	task := &core.Task{
-		Input: "实现登录功能",
-		Specification: &core.Specification{
-			Goal: "实现用户登录",
-			Requirements: []core.Requirement{
-				{ID: "R1", Description: "支持邮箱登录", Priority: "high"},
-			},
-			Constraints:        []string{"使用 JWT"},
-			AcceptanceCriteria: []string{"用户可以登录"},
-			Assumptions:        []string{"已有用户表"},
-		},
-	}
-
-	ctx := executor.buildContext(task)
-	if ctx == "" {
-		t.Error("expected non-empty context")
-	}
-
-	// 检查关键内容
-	if !containsStr(ctx, "实现用户登录") {
-		t.Error("expected context to contain goal")
-	}
-	if !containsStr(ctx, "支持邮箱登录") {
-		t.Error("expected context to contain requirement")
-	}
-	if !containsStr(ctx, "使用 JWT") {
-		t.Error("expected context to contain constraint")
-	}
-	if !containsStr(ctx, "用户可以登录") {
-		t.Error("expected context to contain acceptance criteria")
-	}
-}
-
-func TestExecutor_BuildContext_WithoutSpecification(t *testing.T) {
-	executor := &Executor{}
-	task := &core.Task{
-		Input: "修复 bug",
-	}
-
-	ctx := executor.buildContext(task)
-	if ctx == "" {
-		t.Error("expected non-empty context")
-	}
-	if !containsStr(ctx, "修复 bug") {
-		t.Error("expected context to contain input")
-	}
-}
-
 func TestFormatSpecification_Nil(t *testing.T) {
-	result := formatSpecification(nil)
+	result := FormatSpecification(nil)
 	if result != "" {
 		t.Errorf("expected empty string for nil spec, got %s", result)
 	}
@@ -75,7 +25,7 @@ func TestFormatSpecification_Full(t *testing.T) {
 		Assumptions:        []string{"使用 Redis"},
 	}
 
-	result := formatSpecification(spec)
+	result := FormatSpecification(spec)
 	if result == "" {
 		t.Error("expected non-empty formatted spec")
 	}

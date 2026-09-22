@@ -33,7 +33,8 @@ func (m *DeliberateMode) Run(task *core.Task) (string, error) {
 
 // respond 使用 Executor 生成初始回答（只读，工具只给 read）。
 func (m *DeliberateMode) respond(task *core.Task) (string, error) {
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"read"}}
+	task.SessionInfo.Provider.AllowedTools = []string{"read"}
+	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(task)
 }
 

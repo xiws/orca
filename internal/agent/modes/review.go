@@ -23,7 +23,8 @@ func (m *ReviewMode) Run(task *core.Task) (string, error) {
 		{Role: llm.RoleSystem, Content: reviewSystemPrompt},
 	}, task.SessionInfo.Messages...)
 
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"read", "bash"}}
+	task.SessionInfo.Provider.AllowedTools = []string{"read", "bash"}
+	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(task)
 }
 

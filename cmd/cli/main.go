@@ -150,7 +150,7 @@ func ResumeTask(args *CliArgs) (*core.Task, error) {
 	task := &core.Task{
 		Id:          utils.GetSnowFlakeId(),
 		SessionInfo: sess,
-		TaskTarget:  args.Prompt,
+		Input:       args.Prompt,
 	}
 
 	// 如果指定了 provider 则允许覆盖
@@ -169,45 +169,18 @@ func ResumeTask(args *CliArgs) (*core.Task, error) {
 }
 
 // runMode 根据 CLI 参数选择交互模式并执行任务。
-// 未指定模式时回退到直接调用 Runtime.RunTask（等价于隐式 Code 模式）。
+// 未指定模式时默认使用 code 模式。
 func runMode(args *CliArgs, runtime *core.Runtime, task *core.Task) error {
-	if args.Mode == "" {
-		err, result := runtime.RunTask(task)
-		if err != nil {
-			return err
-		}
-		task.TaskResult = result
-		return nil
+	modeName := args.Mode
+	if modeName == "" {
+		modeName = "code"
 	}
 
-	// 设置模式允许的工具集
-	task.SessionInfo.Provider.AllowedTools = modeAllowedTools(args.Mode)
-
-	mode := modes.For(args.Mode, runtime)
+	mode := modes.For(modeName, runtime)
 	result, err := mode.Run(task)
 	if err != nil {
 		return err
 	}
 	task.TaskResult = result
 	return nil
-}
-
-// modeAllowedTools 返回指定模式允许使用的工具列表。
-// 返回 nil 表示不限制，使用全部可用工具。
-func modeAllowedTools(mode string) []string {
-	switch mode {
-	case "ask":
-		return []string{"read"}
-	case "plan":
-		return []string{"read"}
-	case "deliberate":
-		return []string{"read"}
-	case "review":
-		return []string{"read", "bash"}
-	case "terminal":
-		return []string{"bash"}
-	default:
-		// code, agent, test 不限制
-		return nil
-	}
 }

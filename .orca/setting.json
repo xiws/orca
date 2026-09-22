@@ -1,5 +1,5 @@
 {
-  "defaultProvider": "otter",
-  "defaultModel": "chatgpt",
+  "defaultProvider": "qwen_deepseek",
+  "defaultModel": "qwen3.7-flash-2026-07-15",
   "debug": "false"
 }

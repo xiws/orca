@@ -8,31 +8,31 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 )
 
-type TaskComplateEvent struct {
+type TaskCompleteEvent struct {
 	Result string
 	id     int64
 }
 
-func (e TaskComplateEvent) GetId() int64 {
+func (e TaskCompleteEvent) GetId() int64 {
 	return e.id
 }
 
-func (e TaskComplateEvent) GetName() string {
-	return "TaskComplateEvent"
+func (e TaskCompleteEvent) GetName() string {
+	return "TaskCompleteEvent"
 }
 
-func NewTaskComplateEvent(result string, id int64) TaskComplateEvent {
-	return TaskComplateEvent{
+func NewTaskCompleteEvent(result string, id int64) TaskCompleteEvent {
+	return TaskCompleteEvent{
 		Result: result,
 		id:     id,
 	}
 }
 
-type TaskComplateEventHandler struct {
+type TaskCompleteEventHandler struct {
 }
 
-func (b TaskComplateEventHandler) Handle(ent event.Event) {
-	taskEvent, ok := ent.(TaskComplateEvent)
+func (b TaskCompleteEventHandler) Handle(ent event.Event) {
+	taskEvent, ok := ent.(TaskCompleteEvent)
 	if !ok {
 		panic("ToolEvent handler is not a ToolEvent")
 	}

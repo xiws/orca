@@ -20,16 +20,6 @@ func TestNewTask_HasInitialStatus(t *testing.T) {
 	}
 }
 
-func TestNewTask_BackwardCompat(t *testing.T) {
-	task := NewTask("do something", "Some Title")
-	if task.TaskTarget != "do something" {
-		t.Errorf("expected TaskTarget 'do something', got %s", task.TaskTarget)
-	}
-	if task.TaskTitle != "Some Title" {
-		t.Errorf("expected TaskTitle 'Some Title', got %s", task.TaskTitle)
-	}
-}
-
 func TestTask_RecordTransition(t *testing.T) {
 	task := NewTask("test", "")
 	task.RecordTransition(TaskCreated, TaskRunning, "starting execution")

@@ -268,7 +268,7 @@ func (m model) runAgent(prompt string) tea.Cmd {
 		task := &core.Task{
 			Id:          m.session.Id,
 			SessionInfo: m.session,
-			TaskTarget:  prompt,
+			Input:       prompt,
 		}
 
 		err, result := m.runtime.RunTask(task)

@@ -132,7 +132,7 @@ func registerEventHandlers(bus *event.EventBus) error {
 		return err
 	}
 
-	if err := bus.Subscribe(event2.TaskComplateEvent{}, event2.TaskComplateEventHandler{}); err != nil {
+	if err := bus.Subscribe(event2.TaskCompleteEvent{}, event2.TaskCompleteEventHandler{}); err != nil {
 		return err
 	}
 
@@ -145,7 +145,7 @@ func (r *Runtime) RunTask(task *Task) (error, string) {
 	if err != nil {
 		return err, result
 	}
-	r.bus.Publish(event2.NewTaskComplateEvent(result, task.Id))
+	r.bus.Publish(event2.NewTaskCompleteEvent(result, task.Id))
 	return err, result
 }
 
