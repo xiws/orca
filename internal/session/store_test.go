@@ -155,10 +155,10 @@ func TestV2RoundTrip(t *testing.T) {
 	if err := json.Unmarshal(file["session"], &sessionFields); err != nil {
 		t.Fatal(err)
 	}
-	if len(sessionFields) != 6 {
+	if len(sessionFields) != 7 {
 		t.Fatalf("domain session contains unexpected state: %s", file["session"])
 	}
-	for _, key := range []string{"id", "title", "project_path", "messages", "create_time", "update_time"} {
+	for _, key := range []string{"version", "id", "title", "project_path", "messages", "create_time", "update_time"} {
 		if _, ok := sessionFields[key]; !ok {
 			t.Errorf("domain session missing %s", key)
 		}

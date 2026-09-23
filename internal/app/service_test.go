@@ -45,7 +45,15 @@ func toolCall(name, args string) model.Response {
 	return res
 }
 
-func setup(t *testing.T, f *scriptedModel, concurrency int) (*app.Service, *store.Store, string) {
+type testTB interface {
+	Helper()
+	TempDir() string
+	Fatal(args ...any)
+	Error(args ...any)
+	Cleanup(func())
+}
+
+func setup(t testTB, f *scriptedModel, concurrency int) (*app.Service, *store.Store, string) {
 	t.Helper()
 	workspace := t.TempDir()
 	db, err := store.Open(workspace)
@@ -68,7 +76,7 @@ func setup(t *testing.T, f *scriptedModel, concurrency int) (*app.Service, *stor
 	})
 	return service, db, workspace
 }
-func wait(t *testing.T, s *app.Service, id domain.RunID) *domain.Run {
+func wait(t testTB, s *app.Service, id domain.RunID) *domain.Run {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -78,7 +86,7 @@ func wait(t *testing.T, s *app.Service, id domain.RunID) *domain.Run {
 	}
 	return r
 }
-func submit(t *testing.T, s *app.Service, req app.SubmitRequest) *domain.Run {
+func submit(t testTB, s *app.Service, req app.SubmitRequest) *domain.Run {
 	t.Helper()
 	r, err := s.Submit(context.Background(), req)
 	if err != nil {

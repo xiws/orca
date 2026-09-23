@@ -175,3 +175,71 @@ func TestUnknownBlocksQueuedWorkButAllowsCancellation(t *testing.T) {
 		t.Fatalf("new work failed: %s", result.State)
 	}
 }
+
+func TestQueuedCancellationDoesNotWaitForAnotherModel(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	f := &scriptedModel{answer: func(ctx context.Context, _ model.Request) (model.Response, error) {
+		close(started)
+		select {
+		case <-release:
+			return answer("done"), nil
+		case <-ctx.Done():
+			return model.Response{}, model.ErrUnknown
+		}
+	}}
+	s, db, _ := setup(t, f, 1)
+	defer close(release)
+	first := submit(t, s, app.SubmitRequest{Input: "blocked model", Mode: "ask"})
+	<-started
+	queued := submit(t, s, app.SubmitRequest{SessionID: first.SessionID, Input: "cancel before starting", Mode: "ask"})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.Cancel(ctx, queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Wait(ctx, queued.ID)
+	if err != nil || result.State != domain.Cancelled {
+		t.Fatalf("queued cancellation blocked: %+v %v", result, err)
+	}
+	active, err := db.Run(ctx, first.ID)
+	if err != nil || active.State != domain.Running {
+		t.Fatalf("unrelated work cancelled: %+v %v", active, err)
+	}
+}
+
+func TestParallelInputReplyWhileSiblingIsRunning(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	f := &scriptedModel{answer: func(ctx context.Context, req model.Request) (model.Response, error) {
+		last := req.Messages[len(req.Messages)-1]
+		if last.Role == "tool" {
+			if last.Content == "first reply" {
+				close(started)
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return model.Response{}, model.ErrUnknown
+				}
+			}
+			return answer("critique"), nil
+		}
+		if strings.Contains(req.Messages[0].Content, "Critique the proposed answer") {
+			return toolCall("request_input", `{"prompt":"Provide evidence"}`), nil
+		}
+		return answer("answer"), nil
+	}}
+	s, _, _ := setup(t, f, 2)
+	defer close(release)
+	run := submit(t, s, app.SubmitRequest{Input: "deliberate", Mode: "deliberate"})
+	wait(t, s, run.ID)
+	inputs, err := s.PendingInputs(context.Background(), run.ID)
+	if err != nil || len(inputs) != 2 {
+		t.Fatalf("parallel inputs %+v %v", inputs, err)
+	}
+	if _, err := s.RespondToInput(context.Background(), inputs[0].ID, "first reply", false); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if _, err := s.RespondToInput(context.Background(), inputs[1].ID, "second reply", false); err != nil {
+		t.Fatalf("independent pending reply rejected: %v", err)
+	}
+}
