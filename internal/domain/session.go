@@ -1,10 +1,6 @@
 package domain
 
-import (
-	"time"
-
-	"github.com/xiws/orca/pkg/utils"
-)
+import "time"
 
 type SessionID int64
 
@@ -24,6 +20,7 @@ type Message struct {
 }
 
 type Session struct {
+	Version     int64     `json:"version"`
 	ID          SessionID `json:"id"`
 	Title       string    `json:"title"`
 	ProjectPath string    `json:"project_path"`
@@ -35,7 +32,7 @@ type Session struct {
 func NewSession(projectPath string) *Session {
 	now := time.Now().Unix()
 	return &Session{
-		ID:          SessionID(utils.GetSnowFlakeId()),
+		ID:          SessionID(NewID()),
 		ProjectPath: projectPath,
 		Messages:    make([]Message, 0),
 		CreateTime:  now,
@@ -54,7 +51,7 @@ func (s *Session) AppendAssistant(taskID TaskID, content string) {
 func (s *Session) append(taskID TaskID, role MessageRole, content string) {
 	now := time.Now().Unix()
 	s.Messages = append(s.Messages, Message{
-		ID:         utils.GetSnowFlakeId(),
+		ID:         NewID(),
 		TaskID:     taskID,
 		Role:       role,
 		Content:    content,

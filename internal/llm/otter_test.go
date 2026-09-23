@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -264,13 +266,28 @@ func TestOtterRequesterRejectsEmptyTail(t *testing.T) {
 	}
 }
 
-// TestBuildOtterBackendRejectsUnknownPlatform 检查 otter 平台不认识的模型 id 被按名拒绝。
+// TestBuildOtterBackendRejectsUnknownPlatform 检查未知平台在读取配置前被拒绝。
 func TestBuildOtterBackendRejectsUnknownPlatform(t *testing.T) {
-	_, err := buildOtterBackend("no-such-platform")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configDir := filepath.Join(home, ".otter")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// 若构建器先加载配置，这个无效 JSON 会掩盖未知平台错误。
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte("{invalid JSON"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	backend, err := buildOtterBackend("no-such-platform")
+	if backend != nil {
+		t.Fatal("buildOtterBackend() returned a backend for an unknown platform")
+	}
 	if err == nil {
 		t.Fatal("buildOtterBackend() error = nil, want a rejection")
 	}
-	if !strings.Contains(err.Error(), "unsupported platform") {
-		t.Errorf("error = %v, want it to name the unsupported platform", err)
+	const want = `otter: unsupported platform "no-such-platform", want deepseek, chatgpt or gemini`
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q (without loading the broken HOME config)", err, want)
 	}
 }

@@ -4,160 +4,237 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 )
 
-// ErrHelpRequested 在用户仅请求帮助时返回。此时帮助
-// 文本已打印到标准输出，调用方只需正常退出即可。
 var ErrHelpRequested = errors.New("help requested")
 
 type StringSlice []string
 
-func (s *StringSlice) String() string {
-	return strings.Join(*s, ",")
-}
-
-func (s *StringSlice) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
+func (s *StringSlice) String() string         { return strings.Join(*s, ",") }
+func (s *StringSlice) Set(value string) error { *s = append(*s, value); return nil }
 
 type CliArgs struct {
-	Files        []string // 附加文件
-	SystemPrompt string   // 系统提示词文件
-	Model        string   // 模型
-	Provider     string   // 模型 Provider
-	Mode         string   // 交互模式 (ask, code, agent 等)
-	Prompt       string   // 用户输入
-	SessionId    int64    // 恢复的 session id
-	SubCommand   string   // 子命令 (如 "session")
-	SubArgs      []string // 子命令参数
+	Files        []string
+	SystemPrompt string
+	Model        string
+	Provider     string
+	Mode         string
+	Prompt       string
+	SessionId    int64
+	SubCommand   string
+	SubArgs      []string
+	After        int64
 }
 
-func ParseArgs() (*CliArgs, error) {
-	if len(os.Args) > 1 {
-		// 全局帮助请求，优先于其他参数解析进行处理。
-		switch os.Args[1] {
-		case "-h", "--help", "help":
-			PrintHelp()
-			return nil, ErrHelpRequested
-		}
-	}
+func ParseArgs() (*CliArgs, error) { return parseArgs(os.Args[1:], os.Stdout) }
 
-	// 优先检查子命令
-	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
-		// 第一个参数不以 - 开头，可能是子命令
-		switch os.Args[1] {
-		case "session":
-			return parseSessionCommand()
+func parseArgs(argv []string, out io.Writer) (*CliArgs, error) {
+	if len(argv) > 0 && (argv[0] == "help" || argv[0] == "-h" || argv[0] == "--help") {
+		if len(argv) != 1 {
+			return nil, fmt.Errorf("unexpected help arguments")
 		}
+		fmt.Fprint(out, helpText)
+		return nil, ErrHelpRequested
 	}
-
+	if len(argv) > 0 && (argv[0] == "run" || argv[0] == "session" || argv[0] == "task") {
+		a := &CliArgs{SubCommand: argv[0], SubArgs: append([]string(nil), argv[1:]...)}
+		if err := validateCommand(a); err != nil {
+			return nil, err
+		}
+		return a, nil
+	}
+	a := &CliArgs{}
 	var files StringSlice
-
 	fs := flag.NewFlagSet("orca", flag.ContinueOnError)
-	// 每个解析问题都显示完整帮助，而不是仅显示标志
-	// 默认值，后者不了解会话子命令。
-	fs.Usage = PrintHelp
-
-	systemPrompt := fs.String("sp", "", "覆盖系统提示词，传入文件名称")
-	fs.StringVar(systemPrompt, "s", "", "覆盖系统提示词，传入文件名称")
-
-	model := fs.String("model", "", "指定模型")
-	fs.StringVar(model, "m", "", "指定模型")
-
-	fs.Var(&files, "file", "用户要传入的附加文件，可重复使用")
-	fs.Var(&files, "f", "用户要传入的附加文件，可重复使用")
-
-	// -p, --provider
-	var provider string
-	fs.StringVar(&provider, "p", "", "指定模型 Provider")
-	fs.StringVar(&provider, "provider", "", "指定模型 Provider")
-
-	// --session
-	var sessionId int64
-	fs.Int64Var(&sessionId, "session", 0, "恢复指定的 session id")
-
-	// --mode
-	mode := fs.String("mode", "", "交互模式 (ask, code, agent 等)")
-
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		// 在其他标志之后发现 -h/--help：flag 已通过 fs.Usage 打印了
-		// 帮助信息，然后返回 ErrHelp。
+	// Return parse errors to main, which quotes them before terminal output.
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() { fmt.Fprint(out, helpText) }
+	fs.StringVar(&a.SystemPrompt, "sp", "", "system prompt file")
+	fs.StringVar(&a.SystemPrompt, "s", "", "system prompt file")
+	fs.StringVar(&a.Provider, "p", "", "provider (requires -m)")
+	fs.StringVar(&a.Provider, "provider", "", "provider (requires -m)")
+	fs.StringVar(&a.Model, "m", "", "model (requires -p)")
+	fs.StringVar(&a.Model, "model", "", "model (requires -p)")
+	fs.Var(&files, "f", "attached file; repeatable")
+	fs.Var(&files, "file", "attached file; repeatable")
+	fs.Func("session", "continue session with a NEW task/run", func(value string) error {
+		id, err := ParseSessionId(value)
+		if err == nil {
+			a.SessionId = id
+		}
+		return err
+	})
+	fs.StringVar(&a.Mode, "mode", "", "workflow mode")
+	if err := fs.Parse(argv); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil, ErrHelpRequested
 		}
 		return nil, err
 	}
-
-	args := fs.Args()
-	if len(args) == 0 {
-		return nil, fmt.Errorf("missing prompt")
+	a.Files, a.Prompt = files, strings.Join(fs.Args(), " ")
+	if err := validateSubmitArgs(a); err != nil {
+		return nil, err
 	}
-
-	return &CliArgs{
-		Files:        files,
-		SystemPrompt: *systemPrompt,
-		Model:        *model,
-		Provider:     provider,
-		Mode:         *mode,
-		Prompt:       strings.Join(args, " "),
-		SessionId:    sessionId,
-	}, nil
+	return a, nil
 }
 
-// parseSessionCommand 收集 "session" 子命令的参数。缺少
-// 操作时留给处理器处理，由它返回会话帮助信息。
-func parseSessionCommand() (*CliArgs, error) {
-	return &CliArgs{
-		SubCommand: "session",
-		SubArgs:    os.Args[2:],
-	}, nil
+func validateSubmitArgs(a *CliArgs) error {
+	if (a.Provider == "") != (a.Model == "") {
+		return fmt.Errorf("provider and model must be supplied together (-p PROVIDER -m MODEL)")
+	}
+	if a.SessionId < 0 {
+		return fmt.Errorf("session ID must be positive")
+	}
+	if err := validateMode(a.Mode); err != nil {
+		return err
+	}
+	if strings.TrimSpace(a.Prompt) == "" {
+		return fmt.Errorf("missing prompt")
+	}
+	return nil
 }
 
-// ParseSessionId 将会话 ID 从字符串解析为 int64。
+func validateMode(name string) error {
+	switch name {
+	case "", "ask", "code", "plan", "agent", "review", "test", "terminal", "deliberate":
+		return nil
+	default:
+		return fmt.Errorf("unknown mode %q", name)
+	}
+}
+
 func ParseSessionId(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
+	if strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return 0, fmt.Errorf("invalid positive ID %q", s)
+	}
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid positive ID %q", s)
+	}
+	return id, nil
 }
 
-// helpText 是 orca 命令的完整用法说明，通过 -h/--help 显示，
-// 也在参数无法解析时展示。
-const helpText = `Orca - AI Agent 命令行工具
+func validateCommand(a *CliArgs) error {
+	if a.SubCommand != "run" && a.SubCommand != "session" && a.SubCommand != "task" {
+		return fmt.Errorf("unknown command %q", a.SubCommand)
+	}
+	args := a.SubArgs
+	if len(args) == 0 {
+		return nil
+	}
+	if args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		if len(args) != 1 {
+			return fmt.Errorf("unexpected help arguments")
+		}
+		return nil
+	}
+	if a.SubCommand == "task" {
+		if args[0] != "revise" || len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
+			return fmt.Errorf("usage: orca task revise ID INPUT")
+		}
+		_, err := ParseSessionId(args[1])
+		return err
+	}
+	if args[0] == "list" || args[0] == "ls" {
+		if len(args) != 1 {
+			return fmt.Errorf("list takes no arguments")
+		}
+		return nil
+	}
+	if a.SubCommand == "session" {
+		switch args[0] {
+		case "import":
+			if len(args) != 4 || args[2] != "--owner" || strings.TrimSpace(args[1]) == "" || strings.TrimSpace(args[3]) == "" {
+				return fmt.Errorf("usage: orca session import PATH --owner WORKSPACE")
+			}
+			return nil
+		case "rm", "remove", "delete":
+			if len(args) < 2 {
+				return fmt.Errorf("rm requires a session ID or --all")
+			}
+			if len(args) == 2 && (args[1] == "--all" || args[1] == "-a") {
+				return nil
+			}
+			for _, arg := range args[1:] {
+				if _, err := ParseSessionId(arg); err != nil {
+					return err
+				}
+			}
+			return nil
+		case "show":
+			if len(args) != 2 {
+				return fmt.Errorf("usage: orca session show ID")
+			}
+		default:
+			return fmt.Errorf("unknown session subcommand %q", args[0])
+		}
+	} else {
+		switch args[0] {
+		case "show":
+			if len(args) == 4 && args[2] == "--after" {
+				after, err := strconv.ParseInt(args[3], 10, 64)
+				if err != nil || after < 0 {
+					return fmt.Errorf("after must be a non-negative event sequence")
+				}
+				a.After = after
+			} else if len(args) != 2 {
+				return fmt.Errorf("usage: orca run show ID [--after SEQUENCE]")
+			}
+		case "reconcile":
+			if len(args) != 4 || args[2] != "--note" || strings.TrimSpace(args[3]) == "" {
+				return fmt.Errorf("usage: orca run reconcile ID --note TEXT (only after manual verification; never replays)")
+			}
+		case "resume", "cancel", "retry", "approve", "reject":
+			if len(args) != 2 {
+				return fmt.Errorf("usage: orca run %s ID", args[0])
+			}
+		case "respond":
+			if len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
+				return fmt.Errorf("usage: orca run respond INPUT_ID TEXT")
+			}
+		default:
+			return fmt.Errorf("unknown run subcommand %q", args[0])
+		}
+	}
+	_, err := ParseSessionId(args[1])
+	return err
+}
+
+const helpText = `Orca — durable tasks and runs
 
 Usage:
-  orca [options] <prompt>                启动新任务
-  orca [options] -session <id> <prompt>  恢复指定会话继续对话
-  orca session <command>                 管理已保存的会话
-
-Session Commands:
-  list, ls               列出所有已保存的会话
-  rm, remove <id...>     删除指定会话
-  rm --all, -a           删除所有会话
-  help                   显示 session 帮助
-
-Options:
-  -p, --provider <name>  指定模型 Provider，须与 -m 一起使用（models.json 中的 provider key，如 otter、ollama）
-  -m, --model <id>       指定模型 ID，须与 -p 一起使用（如 chatgpt、deepseek）
-  --mode <name>          交互模式（ask/code/plan/agent/review/test/terminal/deliberate）
-  -s, --sp <file>        用文件内容覆盖系统提示词
-  -f, --file <path>      附加文件到本次请求，可重复使用
-  -session <id>          恢复指定的 session id 继续对话
-  -h, --help             显示本帮助
-
-Examples:
-  orca "为 internal/llm/openai.go 生成单元测试文件"
-  orca --mode ask "这个项目做了什么"
-  orca -p otter -m chatgpt "这个项目做了什么"
-  orca -f main.go -f README.md "解释这两个文件"
-  orca -session 1234567890123456789 "继续完成上面的任务"
+  orca [options] PROMPT
+  orca -session ID [options] PROMPT    Continue a session with a NEW task/run
+  orca run list
+  orca run show ID [--after SEQUENCE]  Replay all durable events, including child runs
+  orca run resume ID                  Resume an interrupted run (not a new task)
+  orca run cancel ID
+  orca run retry TASK_ID
+  orca run respond INPUT_ID TEXT
+  orca run approve INPUT_ID
+  orca run reject INPUT_ID
+  orca run reconcile ID --note TEXT   Manually verified unknown outcome; mark failed, NEVER replay
+  orca task revise ID INPUT           Create a task revision, without executing it
   orca session list
-  orca session rm 1234567890123456789
-  orca session rm --all
+  orca session show ID
+  orca session import PATH --owner WORKSPACE
+  orca session rm ID...|--all
+
+Options (before PROMPT):
+  -p, --provider NAME   Must be paired with -m
+  -m, --model NAME      Must be paired with -p
+  -session ID          Continue a session
+  -mode NAME           ask/code/plan/agent/review/test/terminal/deliberate
+  -f, --file PATH       Attach file; repeatable
+  -sp, -s FILE          Override system prompt from file
+  -h, --help
+
+Waiting input/approval is saved and exits successfully; use its INPUT_ID to reply.
+Delta notifications are advisory; run show --after replays durable events.
 `
 
-// PrintHelp 将完整的 orca 用法文本写入标准输出。
-func PrintHelp() {
-	fmt.Fprint(os.Stdout, helpText)
-}
+func PrintHelp() { fmt.Fprint(os.Stdout, helpText) }

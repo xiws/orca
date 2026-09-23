@@ -327,6 +327,13 @@ func (o *otterRequester) commit(meta otterMeta, delivered int) {
 // buildOtterBackend 构建模型 id 指定的 otter 平台 provider。
 // 凭据的初始化方式与 otter CLI 完全一致，因此用任一工具执行的登录可同时服务两者。
 func buildOtterBackend(platform string) (otterBackend, error) {
+	// 未知平台不应读取用户配置或凭据。
+	switch platform {
+	case "deepseek", "chatgpt", "gemini":
+	default:
+		return nil, fmt.Errorf("otter: unsupported platform %q, want deepseek, chatgpt or gemini", platform)
+	}
+
 	configPath := config.ResolvePath(otterConfigPath)
 	appConfig, err := config.Load(configPath)
 	if err != nil {

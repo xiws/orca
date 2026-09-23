@@ -1,188 +1,112 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
+	"io"
+	"unicode"
+	"unicode/utf16"
 
-	"github.com/xiws/orca/internal/session"
+	"github.com/xiws/orca/internal/domain"
 )
 
-// HandleSessionCommand 处理 "session" 子命令。
-func HandleSessionCommand(args []string) error {
-	if len(args) == 0 {
-		printSessionHelp()
-		return nil
-	}
-
-	switch args[0] {
-	case "list", "ls":
-		return listSessions()
-	case "rm", "remove", "delete":
-		return deleteSessions(args[1:])
-	case "help", "-h", "--help":
-		printSessionHelp()
-		return nil
-	default:
-		return fmt.Errorf("unknown session subcommand: %s (run 'orca session help' for usage)", args[0])
-	}
+func commandHelp(args []string) bool {
+	return len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help"
 }
 
-// listSessions 显示所有已保存的会话。
-func listSessions() error {
-	metas := session.List()
-	if len(metas) == 0 {
-		fmt.Println("No sessions found.")
-		return nil
-	}
-
-	// 打印表头
-	fmt.Printf("%-20s  %-30s  %-30s  %8s  %8s  %s\n",
-		"ID", "TITLE", "PROJECT", "MESSAGES", "TOKENS", "UPDATED")
-	fmt.Println(strings.Repeat("-", 130))
-
-	// 打印每个会话
-	for _, m := range metas {
-		title := truncateStr(m.Title, 30)
-		project := truncatePath(m.ProjectPath, 30)
-		updated := formatRelativeTime(m.UpdateTime)
-		fmt.Printf("%-20d  %-30s  %-30s  %8d  %8d  %s\n",
-			m.Id, title, project, m.MessageCount, m.TotalTokens, updated)
-	}
-
-	return nil
+func isRemove(command string) bool {
+	return command == "rm" || command == "remove" || command == "delete"
 }
 
-// deleteSessions 处理带可选 --all 标志的 "rm" 子命令。
-func deleteSessions(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("rm requires a session ID or --all flag")
-	}
-
-	// 检查 --all 标志
-	if args[0] == "--all" || args[0] == "-a" {
-		return deleteAllSessions()
-	}
-
-	// 删除指定会话
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			continue // 跳过未知标志
-		}
-
-		id, err := ParseSessionId(arg)
-		if err != nil {
-			return fmt.Errorf("invalid session ID %q: %w", arg, err)
-		}
-
-		if err := session.Delete(id); err != nil {
-			return fmt.Errorf("delete session %d: %w", id, err)
-		}
-		fmt.Printf("Deleted session %d\n", id)
-	}
-
-	return nil
-}
-
-// deleteAllSessions 确认后删除所有会话。
-func deleteAllSessions() error {
-	metas := session.List()
-	if len(metas) == 0 {
-		fmt.Println("No sessions to delete.")
-		return nil
-	}
-
-	if err := session.DeleteAll(); err != nil {
+func handleSession(ctx context.Context, s service, importer importSession, args []string, out io.Writer) error {
+	if commandHelp(args) {
+		_, err := fmt.Fprint(out, helpText)
 		return err
 	}
+	switch args[0] {
+	case "list", "ls":
+		sessions, err := s.Sessions(ctx)
+		if err != nil {
+			return err
+		}
+		return writeJSON(out, sessions)
+	case "show":
+		id, err := ParseSessionId(args[1])
+		if err != nil {
+			return err
+		}
+		session, err := s.Session(ctx, domain.SessionID(id))
+		if err != nil {
+			return err
+		}
+		return writeJSON(out, session)
+	case "import":
+		if importer == nil {
+			return fmt.Errorf("session importer unavailable")
+		}
+		id, err := importer(ctx, args[1], args[3])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(out, "Imported session=%d owner=%q\nWarning: the original JSON may still contain secrets; protect or remove it manually. Old execution cursors are NOT restored.\n", id, args[3])
+		return err
+	case "rm", "remove", "delete":
+		return deleteSessions(ctx, s, args[1:], out)
+	default:
+		return fmt.Errorf("unknown session subcommand %q", args[0])
+	}
+}
 
-	fmt.Printf("Deleted %d session(s)\n", len(metas))
+func deleteSessions(ctx context.Context, s service, args []string, out io.Writer) error {
+	if err := validateCommand(&CliArgs{SubCommand: "session", SubArgs: append([]string{"rm"}, args...)}); err != nil {
+		return err
+	}
+	if args[0] == "--all" || args[0] == "-a" {
+		if err := s.DeleteAllSessions(ctx); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(out, "Deleted all sessions in this workspace.")
+		return err
+	}
+	seen := map[domain.SessionID]bool{}
+	for _, arg := range args {
+		id, _ := ParseSessionId(arg)
+		if seen[domain.SessionID(id)] {
+			continue
+		}
+		if err := s.DeleteSession(ctx, domain.SessionID(id)); err != nil {
+			return fmt.Errorf("delete session %d: %w", id, err)
+		}
+		seen[domain.SessionID(id)] = true
+		if _, err := fmt.Fprintf(out, "Deleted session=%d\n", id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// truncateStr 将字符串截断到 maxLen 个字符（按 rune 计算）。
-func truncateStr(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
+func writeJSON(out io.Writer, value any) error {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return err
 	}
-	if maxLen <= 3 {
-		return string(runes[:maxLen])
-	}
-	return string(runes[:maxLen-3]) + "..."
-}
-
-// truncatePath 缩短路径以适应 maxLen 个字符。
-func truncatePath(path string, maxLen int) string {
-	if len(path) <= maxLen {
-		return path
-	}
-
-	// 尝试显示路径的最后一部分
-	base := filepath.Base(path)
-	if len(base) <= maxLen-3 {
-		return "..." + path[len(path)-maxLen+3:]
-	}
-
-	// 从开头截断
-	return "..." + path[len(path)-maxLen+3:]
-}
-
-// formatRelativeTime 将 Unix 时间戳格式化为可读的相对时间。
-func formatRelativeTime(timestamp int64) string {
-	if timestamp == 0 {
-		return "unknown"
-	}
-
-	t := time.Unix(timestamp, 0)
-	diff := time.Since(t)
-
-	switch {
-	case diff < time.Minute:
-		return "just now"
-	case diff < time.Hour:
-		mins := int(diff.Minutes())
-		if mins == 1 {
-			return "1 minute ago"
+	var safe bytes.Buffer
+	for _, r := range encoded.String() {
+		if (unicode.IsControl(r) && r != '\n') || unicode.Is(unicode.Cf, r) {
+			if r > 0xffff {
+				hi, lo := utf16.EncodeRune(r)
+				fmt.Fprintf(&safe, "\\u%04x\\u%04x", hi, lo)
+			} else {
+				fmt.Fprintf(&safe, "\\u%04x", r)
+			}
+		} else {
+			safe.WriteRune(r)
 		}
-		return fmt.Sprintf("%d minutes ago", mins)
-	case diff < 24*time.Hour:
-		hours := int(diff.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	case diff < 7*24*time.Hour:
-		days := int(diff.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	default:
-		return t.Format("2006-01-02")
 	}
-}
-
-// printSessionHelp 显示会话子命令的帮助信息。
-func printSessionHelp() {
-	help := `Usage: orca session <command> [arguments]
-
-管理已保存的会话（列表包含项目目录与用户主目录下的全部会话）。
-
-Commands:
-  list, ls              列出所有已保存的会话
-  rm, remove <id...>    删除指定会话
-  rm --all, -a          删除所有会话
-  help                  显示本帮助
-
-Examples:
-  orca session list
-  orca session rm 1234567890123456789
-  orca session rm --all
-
-Tip: 使用 orca -session <id> "<prompt>" 可恢复指定会话继续对话。
-`
-	fmt.Fprint(os.Stdout, help)
+	_, err := out.Write(safe.Bytes())
+	return err
 }

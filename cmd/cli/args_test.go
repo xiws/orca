@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,122 +10,117 @@ import (
 	"testing"
 )
 
-func TestParseArgsTurnOptions(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		argv []string
-		want CliArgs
-	}{
-		{
-			name: "short flags",
-			argv: []string{"-p", "saved", "-m", "saved-model", "-session", "123", "-mode", "ask", "-f", "first.go", "-f", "second.go", "-s", "system.txt", "continue", "the task"},
-			want: CliArgs{Provider: "saved", Model: "saved-model", SessionId: 123, Mode: "ask", Files: []string{"first.go", "second.go"}, SystemPrompt: "system.txt", Prompt: "continue the task"},
-		},
-		{
-			name: "long flags",
-			argv: []string{"--provider", "saved", "--model", "saved-model", "--session", "456", "--mode", "code", "--file", "first.go", "--file", "second.go", "--sp", "system.txt", "new", "task"},
-			want: CliArgs{Provider: "saved", Model: "saved-model", SessionId: 456, Mode: "code", Files: []string{"first.go", "second.go"}, SystemPrompt: "system.txt", Prompt: "new task"},
-		},
-		{
-			name: "new session defaults",
-			argv: []string{"new", "task"},
-			want: CliArgs{Prompt: "new task"},
-		},
-		{
-			name: "flag terminator",
-			argv: []string{"--", "-not-a-flag", "prompt"},
-			want: CliArgs{Prompt: "-not-a-flag prompt"},
-		},
-		{
-			name: "session command",
-			argv: []string{"session", "rm", "123", "456"},
-			want: CliArgs{SubCommand: "session", SubArgs: []string{"rm", "123", "456"}},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			isolateCLI(t)
-			got := parseCLI(t, tc.argv...)
-			if !reflect.DeepEqual(*got, tc.want) {
-				t.Fatalf("ParseArgs() = %+v, want %+v", *got, tc.want)
+func TestParseSubmission(t *testing.T) {
+	a, err := parseArgs([]string{"-p", "fake", "-m", "local", "-session", "123", "-mode", "ask", "-f", "one", "--file", "two", "-sp", "system", "goal", "text"}, &bytes.Buffer{})
+	want := &CliArgs{Provider: "fake", Model: "local", SessionId: 123, Mode: "ask", Files: []string{"one", "two"}, SystemPrompt: "system", Prompt: "goal text"}
+	if err != nil || !reflect.DeepEqual(a, want) {
+		t.Fatalf("%+v %v", a, err)
+	}
+	a, err = parseArgs([]string{"--", "-literal"}, &bytes.Buffer{})
+	if err != nil || a.Prompt != "-literal" {
+		t.Fatalf("%+v %v", a, err)
+	}
+}
+
+func TestStrictArguments(t *testing.T) {
+	invalid := [][]string{
+		{}, {"-session", "0", "goal"}, {"-session", "-1", "goal"}, {"-session", "+1", "goal"}, {"-session", "9223372036854775808", "goal"},
+		{"-p", "only", "goal"}, {"-m", "only", "goal"}, {"-mode", "unknown", "goal"}, {"-unknown", "goal"}, {"-f"}, {" "},
+		{"session", "rm"}, {"session", "rm", "--all", "1"}, {"session", "show", "1", "extra"}, {"session", "list", "extra"},
+		{"session", "import", "old.json"}, {"session", "import", "old.json", "--owner", " "},
+		{"run", "show", "1", "--after", "-1"}, {"run", "show", "1", "--after", "bad"}, {"run", "show", "0"}, {"run", "help", "extra"},
+		{"run", "resume", "1", "extra"}, {"run", "respond", "1", " "}, {"run", "approve", "bad"}, {"run", "reject", "+1"}, {"run", "typo", "1"},
+		{"run", "reconcile", "1"}, {"run", "reconcile", "1", "--note", " "}, {"run", "reconcile", "1", "--note", "ok", "extra"},
+		{"task", "revise", "1"}, {"task", "revise", "0", "input"}, {"task", "revise", "1", " "}, {"task", "list"},
+	}
+	for _, argv := range invalid {
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			if a, err := parseArgs(argv, &bytes.Buffer{}); err == nil {
+				t.Fatalf("accepted %+v", a)
+			}
+		})
+	}
+	for _, argv := range [][]string{{"session", "rm", "--all"}, {"run", "show", "1", "--after", "0"}, {"run", "reconcile", "1", "--note", "verified externally"}, {"task", "revise", "1", "new input"}} {
+		if _, err := parseArgs(argv, &bytes.Buffer{}); err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+	}
+}
+
+func setArgs(t *testing.T, args ...string) {
+	t.Helper()
+	old := os.Args
+	os.Args = append([]string{"orca"}, args...)
+	t.Cleanup(func() { os.Args = old })
+}
+
+func TestHelpAndInputErrorsHaveNoConfigurationIO(t *testing.T) {
+	for _, argv := range [][]string{{"--help"}, {"-session", "1", "--help"}, {"session"}, {"session", "help"}, {"run", "--help"}, {"task", "-h"}} {
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("WORKSPACE", root)
+			t.Setenv("HOME", filepath.Join(root, "absent-home"))
+			setArgs(t, argv...)
+			if err := run(); err != nil {
+				t.Fatal(err)
+			}
+			files, err := os.ReadDir(root)
+			if err != nil || len(files) != 0 {
+				t.Fatalf("help performed I/O: %v %v", files, err)
+			}
+		})
+	}
+	for _, flag := range []string{"-f", "-sp"} {
+		t.Run(flag, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("WORKSPACE", root)
+			t.Setenv("HOME", filepath.Join(root, "absent-home"))
+			setArgs(t, flag, filepath.Join(root, "missing"), "goal")
+			if err := run(); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("%v", err)
+			}
+			files, _ := os.ReadDir(root)
+			if len(files) != 0 {
+				t.Fatal("opened environment before reading files")
 			}
 		})
 	}
 }
 
-func TestParseArgsErrorsAndHelp(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		argv []string
-		want string
-		help bool
-	}{
-		{name: "missing prompt", want: "missing prompt"},
-		{name: "session still needs prompt", argv: []string{"-session", "123"}, want: "missing prompt"},
-		{name: "invalid session ID", argv: []string{"-session", "not-an-id", "goal"}, want: "invalid value"},
-		{name: "overflow session ID", argv: []string{"-session", "9223372036854775808", "goal"}, want: "invalid value"},
-		{name: "unknown flag", argv: []string{"-unknown", "goal"}, want: "flag provided but not defined"},
-		{name: "missing flag value", argv: []string{"-model"}, want: "flag needs an argument"},
-		{name: "short help", argv: []string{"-h"}, help: true},
-		{name: "long help", argv: []string{"--help"}, help: true},
-		{name: "help command", argv: []string{"help"}, help: true},
-		{name: "help after flags", argv: []string{"-session", "123", "--help"}, help: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			isolateCLI(t)
-			setCLIArgs(t, tc.argv...)
-			args, err := ParseArgs()
-			if args != nil || err == nil {
-				t.Fatalf("ParseArgs() = %+v, %v; want nil args and error", args, err)
-			}
-			if tc.help {
-				if !errors.Is(err, ErrHelpRequested) {
-					t.Fatalf("help error = %v", err)
-				}
-			} else if !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v, want %q", err, tc.want)
-			}
-		})
+func TestPrepareReadsAllFilesBeforeSubmit(t *testing.T) {
+	root := t.TempDir()
+	attachment := filepath.Join(root, "source.go")
+	system := filepath.Join(root, "system.txt")
+	if err := os.WriteFile(attachment, []byte("package sample\n\n"), 0600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestRunStopsBeforeExecutionOnInputErrors(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		argv []string
-		want string
-	}{
-		{name: "parse failure", want: "missing prompt"},
-		{name: "attachment failure", argv: []string{"-file", "missing.txt", "goal"}, want: "read attached file missing.txt"},
-		{name: "system prompt failure", argv: []string{"-sp", "missing.txt", "goal"}, want: "read system prompt missing.txt"},
-		{name: "session failure", argv: []string{"-session", "404", "goal"}, want: "load session 404"},
-		{name: "model failure", argv: []string{"-p", "absent", "-m", "absent", "goal"}, want: "unknown model absent/absent"},
-		{name: "help", argv: []string{"--help"}},
-		{name: "session list", argv: []string{"session", "list"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			isolateCLI(t)
-			setCLIArgs(t, tc.argv...)
-			err := run()
-			if tc.want == "" {
-				if err != nil {
-					t.Fatal(err)
-				}
-			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("run() = %v, want %q", err, tc.want)
-			}
-		})
+	if err := os.WriteFile(system, []byte("custom system\n\n"), 0600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestUserPromptReadFailureDiscardsPartialAttachments(t *testing.T) {
-	workspace, _ := isolateCLI(t)
-	first, missing := filepath.Join(workspace, "first.txt"), filepath.Join(workspace, "missing.txt")
-	writeCLIFile(t, first, "first attachment")
-	prompt, err := userPrompt(&CliArgs{Files: []string{first, missing}, Prompt: "goal"})
-	if prompt != "" || !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("userPrompt() = %q, %v; want empty prompt and missing-file error", prompt, err)
+	a := &CliArgs{Prompt: "explain", Files: []string{attachment}, SystemPrompt: system, SessionId: 8, Provider: "fake", Model: "local"}
+	req, err := prepareRequest(a)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "read attached file "+missing) {
-		t.Fatalf("error lost the failed attachment path: %v", err)
+	if req.Input != "explain" || req.SystemPrompt != "custom system\n\n" || req.SessionID != 8 || req.Model.Provider != "fake" || !strings.Contains(req.Prompt, "package sample\n</file>\n\nexplain") {
+		t.Fatalf("%+v", req)
+	}
+	os.Remove(attachment)
+	os.Remove(system)
+	f := newFake()
+	f.onSubmit = func(got appSubmit) {
+		if !reflect.DeepEqual(got, req) {
+			t.Fatalf("%+v", got)
+		}
+	}
+	if err := execute(t.Context(), f, nil, a, req, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if f.last != "continue:8" {
+		t.Fatal(f.last)
+	}
+	a.Files = []string{attachment}
+	if p, err := userPrompt(a); p != "" || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%q %v", p, err)
 	}
 }

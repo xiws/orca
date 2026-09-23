@@ -36,3 +36,8 @@ orca-tui
 .codewhale
 .orca/sessions
 .orca/test.json
+.orca/state.sqlite3
+.orca/state.sqlite3-wal
+.orca/state.sqlite3-shm
+.orca/state.sqlite3-journal
+.orca/run.lock
