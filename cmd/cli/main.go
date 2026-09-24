@@ -18,6 +18,7 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// service 定义应用层服务接口，用于任务提交、会话管理和运行控制。
 type service interface {
 	Submit(context.Context, app.SubmitRequest) (*domain.Run, error)
 	ContinueSession(context.Context, domain.SessionID, app.SubmitRequest) (*domain.Run, error)
@@ -41,8 +42,10 @@ type service interface {
 
 var _ service = (*app.Service)(nil)
 
+// importSession 表示会话导入函数类型，返回新建的 session ID。
 type importSession func(context.Context, string, string) (domain.SessionID, error)
 
+// main 是 CLI 程序入口，运行失败时打印错误并以非零状态退出。
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "orca: %q\n", err.Error())
@@ -50,6 +53,7 @@ func main() {
 	}
 }
 
+// run 负责参数解析、环境打开与命令分发，并将环境关闭错误合并到返回值。
 func run() (err error) {
 	a, err := ParseArgs()
 	if errors.Is(err, ErrHelpRequested) {
@@ -72,6 +76,7 @@ func run() (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// 打开应用环境（存储、服务等）
 	env, err := bootstrap.Open("")
 	if err != nil {
 		return err
@@ -80,6 +85,7 @@ func run() (err error) {
 	return execute(ctx, env.Service, env.Import, a, req, os.Stdout)
 }
 
+// prepareRequest 根据 CLI 参数构造提交请求，包括读取附加文件和系统提示词。
 func prepareRequest(a *CliArgs) (app.SubmitRequest, error) {
 	if err := validateSubmitArgs(a); err != nil {
 		return app.SubmitRequest{}, err
@@ -99,6 +105,7 @@ func prepareRequest(a *CliArgs) (app.SubmitRequest, error) {
 	return req, nil
 }
 
+// userPrompt 将附加文件内容包裹在 XML 标签中，并与用户提示词拼接。
 func userPrompt(a *CliArgs) (string, error) {
 	var b strings.Builder
 	for _, file := range a.Files {
@@ -112,6 +119,7 @@ func userPrompt(a *CliArgs) (string, error) {
 	return b.String(), nil
 }
 
+// execute 根据子命令分发到不同处理逻辑，或直接提交任务并跟踪运行。
 func execute(ctx context.Context, s service, importer importSession, a *CliArgs, req app.SubmitRequest, out io.Writer) error {
 	if a == nil {
 		return fmt.Errorf("missing arguments")
@@ -134,6 +142,7 @@ func execute(ctx context.Context, s service, importer importSession, a *CliArgs,
 		return handleSession(ctx, s, importer, a.SubArgs, out)
 	}
 	if a.SubCommand == "task" {
+		// task 子命令：根据 ID 更新任务输入，截取标题最多 80 字符
 		id, _ := ParseSessionId(a.SubArgs[1])
 		input := strings.Join(a.SubArgs[2:], " ")
 		title := []rune(input)
@@ -146,8 +155,7 @@ func execute(ctx context.Context, s service, importer importSession, a *CliArgs,
 		}
 		return writeJSON(out, task)
 	}
-	// Once submitted, cancellation is an explicit, durable Cancel operation, not
-	// cancellation of the persistence context halfway through a transaction.
+	// 使用独立于信号上下文的 ctx 执行持久化操作，避免信号取消中断事务。
 	opCtx := context.WithoutCancel(ctx)
 	var run *domain.Run
 	var err error
@@ -157,6 +165,7 @@ func execute(ctx context.Context, s service, importer importSession, a *CliArgs,
 			_, err = fmt.Fprint(out, helpText)
 			return err
 		}
+		// 列出所有运行
 		if args[0] == "list" || args[0] == "ls" {
 			runs, err := s.Runs(ctx)
 			if err != nil {
@@ -172,6 +181,7 @@ func execute(ctx context.Context, s service, importer importSession, a *CliArgs,
 		case "show":
 			return showRun(ctx, s, domain.RunID(id), a.After, out)
 		case "reconcile":
+			// 人工核查：标记运行失败，不重放任何操作
 			reconciled, err := s.ReconcileRun(opCtx, domain.RunID(id), args[3])
 			if err != nil {
 				return err
@@ -217,13 +227,15 @@ func execute(ctx context.Context, s service, importer importSession, a *CliArgs,
 	return followRun(ctx, s, run, out)
 }
 
+// waitResult 封装 Wait 协程的返回结果。
 type waitResult struct {
 	run *domain.Run
 	err error
 }
 
-// Observation owns no execution: disconnecting it never calls Cancel. Only a
-// user signal does. Environment.Close subsequently joins the service worker.
+// followRun 订阅运行事件流并持续输出，直到运行结束或收到信号取消。
+// 观察者不拥有执行权：断开连接不会触发 Cancel，只有用户信号才会。
+// 随后 Environment.Close 会.join（等待）服务 worker。
 func followRun(ctx context.Context, s service, run *domain.Run, out io.Writer) error {
 	waitCtx, stopWait := context.WithCancel(context.WithoutCancel(ctx))
 	finished := make(chan waitResult, 1)
@@ -314,6 +326,7 @@ func followRun(ctx context.Context, s service, run *domain.Run, out io.Writer) e
 	}
 }
 
+// waitForOutcome 等待运行到达终态，若进入 Waiting 且无待处理输入则继续轮询。
 func waitForOutcome(ctx context.Context, s service, id domain.RunID) (*domain.Run, error) {
 	for {
 		r, err := s.Wait(ctx, id)
@@ -334,8 +347,8 @@ func waitForOutcome(ctx context.Context, s service, id domain.RunID) (*domain.Ru
 	}
 }
 
-// Each run has its own after cursor; sorting the combined batches preserves the
-// store's durable sequence across parent, child and critic invocations.
+// readEvents 读取根运行及其所有子运行的事件，每个 run 维护独立的 after 游标，
+// 合并后按持久化序列排序，保证父/子/评审调用的事件顺序正确。
 func readEvents(ctx context.Context, s service, root domain.RunID, after int64, cursors map[domain.RunID]int64) ([]domain.Event, map[domain.RunID]bool, error) {
 	runs, err := s.Runs(ctx)
 	if err != nil {
@@ -383,10 +396,12 @@ func readEvents(ctx context.Context, s service, root domain.RunID, after int64, 
 	return events, ids, nil
 }
 
+// printEvents 将事件列表作为持久化事件输出。
 func printEvents(out io.Writer, events []domain.Event) error {
 	return printDurableEvents(out, events, map[domain.RunID][32]byte{})
 }
 
+// printOutcome 输出运行的最终状态和待处理输入，对失败/中断等状态返回相应错误。
 func printOutcome(ctx context.Context, s service, run *domain.Run, out io.Writer) error {
 	if run == nil {
 		return fmt.Errorf("service returned no final run")
@@ -413,6 +428,7 @@ func printOutcome(ctx context.Context, s service, run *domain.Run, out io.Writer
 	return nil
 }
 
+// showRun 输出指定运行的 JSON 信息、所有事件及待处理输入。
 func showRun(ctx context.Context, s service, id domain.RunID, after int64, out io.Writer) error {
 	r, err := s.Run(ctx, id)
 	if err != nil {
@@ -431,6 +447,7 @@ func showRun(ctx context.Context, s service, id domain.RunID, after int64, out i
 	return printPending(ctx, s, id, out)
 }
 
+// printPending 输出指定运行的待处理输入请求及相应的回复命令。
 func printPending(ctx context.Context, s service, id domain.RunID, out io.Writer) error {
 	inputs, err := s.PendingInputs(ctx, id)
 	if err != nil {

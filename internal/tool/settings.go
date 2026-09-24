@@ -1,3 +1,4 @@
+// Package tool 提供进程级配置和设置管理。
 package tool
 
 import (

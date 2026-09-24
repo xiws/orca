@@ -15,25 +15,36 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// 本文件实现 OpenAI 兼容的 /chat/completions 端点通信。
+
+// wireFunction 是线路格式中的函数名和 JSON 编码参数。
 type wireFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
+
+// wireCall 是线路格式中的单个工具调用。
 type wireCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function wireFunction `json:"function"`
 }
+
+// wireMessage 是线路格式中的聊天消息。
 type wireMessage struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content"`
 	ToolCalls  []wireCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
+
+// wireTool 是请求中 "tools" 数组的单个条目。
 type wireTool struct {
 	Type     string     `json:"type"`
 	Function model.Tool `json:"function"`
 }
+
+// wireRequest 是发送到 /chat/completions 的 JSON 请求体。
 type wireRequest struct {
 	Model         string        `json:"model"`
 	Messages      []wireMessage `json:"messages"`
@@ -45,9 +56,12 @@ type wireRequest struct {
 	} `json:"stream_options"`
 }
 
+// openAIBody 从请求和连接信息构建 OpenAI 请求的 JSON 载荷。
+// 不支持原生工具调用时，将工具定义注入系统提示，并将工具消息转为普通用户消息。
 func openAIBody(conn Connection, req model.Request) ([]byte, error) {
 	body := wireRequest{Model: req.Model.Model, Stream: true, MaxTokens: req.MaxOutputTokens}
 	body.StreamOptions.IncludeUsage = true
+	// 不支持原生工具调用时，将工具定义序列化为系统提示
 	if !conn.SupportsTools {
 		prompt, err := model.ToolPrompt(req.Tools)
 		if err != nil {
@@ -57,6 +71,7 @@ func openAIBody(conn Connection, req model.Request) ([]byte, error) {
 			body.Messages = append(body.Messages, wireMessage{Role: "system", Content: prompt})
 		}
 	} else {
+		// 支持原生工具调用，直接附加工具声明
 		for _, tool := range req.Tools {
 			body.Tools = append(body.Tools, wireTool{Type: "function", Function: tool})
 		}
@@ -64,14 +79,17 @@ func openAIBody(conn Connection, req model.Request) ([]byte, error) {
 	for _, msg := range req.Messages {
 		m := wireMessage{Role: msg.Role, Content: msg.Content, ToolCallID: msg.ToolCallID}
 		if conn.SupportsTools {
+			// 原生模式：直接传递工具调用
 			for _, call := range msg.ToolCalls {
 				m.ToolCalls = append(m.ToolCalls, wireCall{ID: call.ID, Type: "function", Function: wireFunction{Name: call.Name, Arguments: call.Arguments}})
 			}
 		} else {
+			// 非原生模式：将工具调用序列化为文本嵌入内容
 			if len(msg.ToolCalls) > 0 {
 				raw, _ := json.Marshal(msg.ToolCalls)
 				m.Content += "\n<tool_calls>" + string(raw) + "</tool_calls>"
 			}
+			// 工具结果消息转为 user 角色
 			if m.Role == "tool" {
 				m.Role = "user"
 				m.Content = "Tool result for " + m.ToolCallID + ":\n" + m.Content
@@ -83,7 +101,9 @@ func openAIBody(conn Connection, req model.Request) ([]byte, error) {
 	return json.Marshal(body)
 }
 
+// completeOpenAI 通过 OpenAI 兼容的 /chat/completions SSE 端点完成请求。
 func (c *Client) completeOpenAI(ctx context.Context, conn Connection, req model.Request, sink model.Sink) (model.Response, error) {
+	// 校验 base URL 格式，拒绝包含凭据或查询参数的 URL
 	endpoint, err := url.Parse(conn.BaseURL)
 	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 		return model.Response{}, errors.New("openai: invalid base URL (credentials and query parameters are not allowed)")
@@ -111,10 +131,11 @@ func (c *Client) completeOpenAI(ctx context.Context, conn Connection, req model.
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// A rejection is known; timeouts and server failures may follow a submission.
+		// 408 和 5xx 状态码视为临时性错误（unknown），其他状态码为确定性拒绝
 		unknown := resp.StatusCode == 408 || resp.StatusCode >= 500 || resp.StatusCode >= 200 && resp.StatusCode < 300
 		return model.Response{}, remoteError(ctx, fmt.Sprintf("openai: HTTP status %d", resp.StatusCode), unknown)
 	}
+	// 读取并解析 SSE 流
 	result, err := readOpenAI(ctx, resp, req.MaxOutputTokens, sink)
 	if err != nil {
 		return model.Response{}, remoteError(ctx, "openai: incomplete or malformed stream", true)
@@ -130,6 +151,7 @@ func (c *Client) completeOpenAI(ctx context.Context, conn Connection, req model.
 	return result, nil
 }
 
+// streamChunk 是从 SSE 流中解码的单个数据载荷。
 type streamChunk struct {
 	Choices []struct {
 		Index int `json:"index"`
@@ -149,6 +171,7 @@ type streamChunk struct {
 	Error json.RawMessage `json:"error"`
 }
 
+// readOpenAI 从 HTTP 响应中读取 SSE 流，组装助手消息和工具调用。
 func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink model.Sink) (model.Response, error) {
 	var result model.Response
 	var content strings.Builder
@@ -159,6 +182,7 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		// SSE 流以 "data: [DONE]" 结束
 		if data == "[DONE]" {
 			if !finished {
 				return errors.New("missing finish reason")
@@ -166,6 +190,7 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 			done = true
 			return nil
 		}
+		// 严格校验 JSON 格式
 		if model.StrictJSON([]byte(data)) != nil {
 			return errors.New("invalid SSE JSON")
 		}
@@ -204,6 +229,7 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 				target.Arguments += tc.Function.Arguments
 				output += len(tc.ID) + len(tc.Function.Name) + len(tc.Function.Arguments)
 			}
+			// 检查输出是否超出大小限制
 			if output > maxResponseBytes || output > maxOutput*16 {
 				return errors.New("output limit exceeded")
 			}
@@ -229,6 +255,7 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64<<10), 2<<20)
 	var data []string
+	// 逐行读取 SSE 流，按空行分割事件并处理
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return result, ctx.Err()
@@ -257,8 +284,8 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 	if scanner.Err() != nil {
 		return result, scanner.Err()
 	}
-	// A terminal marker may be the last unterminated SSE line, but bare EOF is
-	// never evidence of completion, even after finish_reason was received.
+	// 终止标记可能是最后一个未终止的 SSE 行，但单纯的 EOF
+	// 即使收到了 finish_reason 也不能作为完成证据。
 	if !done && len(data) == 1 && data[0] == "[DONE]" {
 		if err := consume(data[0]); err != nil {
 			return result, err
@@ -268,6 +295,7 @@ func readOpenAI(ctx context.Context, resp *http.Response, maxOutput int, sink mo
 		return result, errors.New("missing stream terminator")
 	}
 	result.Message = model.Message{Role: "assistant", Content: content.String()}
+	// 按索引顺序排列工具调用，保证确定性输出
 	indices := make([]int, 0, len(calls))
 	for index := range calls {
 		indices = append(indices, index)

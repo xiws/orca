@@ -19,7 +19,8 @@ func (e *Executor) Execute(inv *core.Invocation) (string, error) {
 	return e.Runtime.Run(inv)
 }
 
-// FormatSpecification 将 Specification 格式化为可读文本。
+// FormatSpecification 将 Specification 格式化为可读文本，用于注入 LLM 上下文。
+// 各段按需拼接：目标 → 需求 → 约束 → 验收标准 → 假设。
 func FormatSpecification(spec *domain.Specification) string {
 	if spec == nil {
 		return ""
@@ -28,6 +29,7 @@ func FormatSpecification(spec *domain.Specification) string {
 	var result string
 	result += "## 任务目标\n" + spec.Goal + "\n\n"
 
+	// 需求列表，按优先级标注
 	if len(spec.Requirements) > 0 {
 		result += "## 需求\n"
 		for _, req := range spec.Requirements {
@@ -36,6 +38,7 @@ func FormatSpecification(spec *domain.Specification) string {
 		result += "\n"
 	}
 
+	// 约束条件
 	if len(spec.Constraints) > 0 {
 		result += "## 约束\n"
 		for _, c := range spec.Constraints {
@@ -44,6 +47,7 @@ func FormatSpecification(spec *domain.Specification) string {
 		result += "\n"
 	}
 
+	// 验收标准
 	if len(spec.AcceptanceCriteria) > 0 {
 		result += "## 验收标准\n"
 		for _, c := range spec.AcceptanceCriteria {
@@ -52,6 +56,7 @@ func FormatSpecification(spec *domain.Specification) string {
 		result += "\n"
 	}
 
+	// 假设
 	if len(spec.Assumptions) > 0 {
 		result += "## 假设\n"
 		for _, a := range spec.Assumptions {

@@ -15,6 +15,7 @@ type CreateTaskOption struct {
 	TaskTarget []TaskBaseInfo `json:"task_target"`
 }
 
+// CreateTaskHandler 服务 create_task 命令，将高级目标分解为可独立执行的子任务。
 type CreateTaskHandler struct {
 	Workspace
 }
@@ -30,6 +31,7 @@ func NewCreateTaskOption(id int64, taskTarget []TaskBaseInfo) *CreateTaskOption 
 	return &CreateTaskOption{Id: id, TaskTarget: taskTarget}
 }
 
+// Handle 解析 create_task 命令，过滤无效子任务后返回任务列表。
 func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 	opt, ok := cmd.(*CreateTaskOption)
 	if !ok {
@@ -39,6 +41,7 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 	meta := h.buildMeta(opt)
 	publish(h.Publisher, event.NewToolBeforeEvent("create_task", "", meta, opt.Reasoning, opt.Id))
 
+	// 过滤掉标题或描述为空的无效子任务。
 	var targets []TaskBaseInfo
 	for _, target := range opt.TaskTarget {
 		if target.Title == "" || target.Description == "" {
@@ -47,6 +50,7 @@ func (h *CreateTaskHandler) Handle(cmd command.CommandOption) (error, any) {
 		targets = append(targets, target)
 	}
 
+	// 必须至少有一个有效子任务。
 	if len(targets) == 0 {
 		return nil, ResultFor(cmd, "", fmt.Errorf("task_target is required"))
 	}

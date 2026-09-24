@@ -21,7 +21,10 @@ type ToolAfterEvent struct {
 	exitCode int    // bash 退出码；非 bash 或成功时为 0
 }
 
-func (e ToolAfterEvent) GetId() int64    { return e.id }
+// GetId 返回事件的唯一标识。
+func (e ToolAfterEvent) GetId() int64 { return e.id }
+
+// GetName 返回事件名称。
 func (e ToolAfterEvent) GetName() string { return "ToolAfterEvent" }
 
 // ToolName 返回命令名。
@@ -66,6 +69,7 @@ func NewToolAfterEvent(tool, file, content string, ok bool, summary string, exit
 // ToolAfterEventHandler 使用 glamour 渲染 after-event 结果。
 type ToolAfterEventHandler struct{}
 
+// Handle 处理 after-event，使用 glamour 渲染 markdown 结果到终端。
 func (b ToolAfterEventHandler) Handle(ent event.Event) {
 	if tool.Get(tool.KeyDebug) == "false" {
 		return

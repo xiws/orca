@@ -8,23 +8,26 @@ import (
 	"github.com/xiws/orca/internal/domain"
 )
 
-const maxPreviews = 32
-const maxPreviewBytes = 8192
-const maxStreamInvocations = 256
+// 流式预览的资源上限：防止恶意或大量流式数据耗尽内存。
+const maxPreviews = 32           // 最大同时预览数
+const maxPreviewBytes = 8192     // 单个预览最大字节数
+const maxStreamInvocations = 256 // 最大追踪的 invocation 数量
 
+// invocationKey 唯一标识一次 invocation（运行 + invocation ID）。
 type invocationKey struct {
 	run        domain.RunID
 	invocation domain.InvocationID
 }
+
+// streamKey 在 invocation 基础上加上 assistant 序列号，标识一条流式片段。
 type streamKey struct {
 	invocationKey
 	sequence int
 }
 
-// Preview text is lossy and bounded, never a source for a final answer. A
-// high-water mark rejects late deltas after durable confirmation. Once the
-// identity budget is full we stop previewing new invocations, not evict fences
-// and accidentally resurrect old text. Durable events are never capped here.
+// addDelta 处理流式增量事件：预览文本是有损且有界的，不能作为最终答案来源。
+// 高水位标记拒绝已持久化确认后的迟到 delta。当 invocation 身份预算用尽时，
+// 停止预览新 invocation，而不是驱逐围栏意外复活旧文本。持久化事件不受此处限制。
 func (m *model) addDelta(e domain.Event) {
 	if e.AssistantSequence <= 0 || e.InvocationID == 0 {
 		return
@@ -51,8 +54,8 @@ func (m *model) addDelta(e domain.Event) {
 		}
 		m.previewOrder = append(m.previewOrder, key)
 	}
-	// Limit before sanitation as well, so a malicious chunk cannot create a
-	// second unbounded allocation. Split UTF-8 chunks are replaced, not executed.
+	// 在清理之前做长度限制，避免恶意 chunk 产生第二次无界分配；
+	// 被切分的 UTF-8 片段会被替换而非执行。
 	remaining := maxPreviewBytes - len(text)
 	if remaining <= 0 {
 		return
@@ -72,6 +75,7 @@ func (m *model) addDelta(e domain.Event) {
 	m.refresh()
 }
 
+// confirm 处理持久化消息事件：更新已确认序列号的高水位，并移除已被确认的预览。
 func (m *model) confirm(e domain.Event) {
 	if e.Kind != "message" || e.AssistantSequence <= 0 {
 		return
@@ -94,6 +98,8 @@ func (m *model) confirm(e domain.Event) {
 	m.previewOrder = order
 }
 
+// appendEvent 将一个持久化事件追加到聊天历史：先 confirm 已确认序列，
+// 并检测 completed 事件是否与上一条 message 内容重复。
 func (m *model) appendEvent(e domain.Event) {
 	m.confirm(e)
 	if m.lastMessages == nil {

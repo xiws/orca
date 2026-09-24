@@ -12,6 +12,10 @@ import (
 	otter "github.com/xiws/otter/pkg/provider"
 )
 
+// 本文件实现 otter 平台后端的构建和各平台 provider 的适配层。
+
+// buildOtterBackend 根据平台名称构建对应的 otter 后端。
+// 凭据的初始化方式与 otter CLI 完全一致，因此用任一工具执行的登录可同时服务两者。
 func buildOtterBackend(ctx context.Context, platform string) (otterBackend, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -21,6 +25,7 @@ func buildOtterBackend(ctx context.Context, platform string) (otterBackend, erro
 	default:
 		return nil, errors.New("otter: unsupported platform")
 	}
+	// 拒绝依赖 debug 开关的配置，防止凭据被转储到磁盘或标准输出
 	if err := safeOtterDebug(); err != nil {
 		return nil, err
 	}
@@ -36,8 +41,7 @@ func buildOtterBackend(ctx context.Context, platform string) (otterBackend, erro
 		}
 		return ds, nil
 	case "chatgpt":
-		// The high-level provider writes extracted/refreshed cookies. Use the same
-		// configuration boundary with the lower-level API and in-memory cookies.
+		// 高级 provider 会写入提取/刷新的 cookie，使用底层 API 和内存 cookie
 		cg := api.NewChatGPTAPI()
 		modelName := cfg.ChatGPT.Model
 		if modelName == "" {
@@ -82,8 +86,8 @@ func buildOtterBackend(ctx context.Context, platform string) (otterBackend, erro
 	return nil, errors.New("otter: unsupported platform")
 }
 
-// Refuse dependency debug switches rather than changing process environment or
-// allowing the library to dump authentication tokens to disk/stderr.
+// safeOtterDebug 拒绝启用凭据/debug 转储的环境变量，
+// 防止库将认证 token 输出到磁盘或标准错误。
 func safeOtterDebug() error {
 	for _, key := range []string{"OTTER_SENTINEL_DUMP", "OTTER_SSE_DEBUG", "OTTER_TURNSTILE_DEBUG"} {
 		if os.Getenv(key) != "" {
@@ -93,6 +97,7 @@ func safeOtterDebug() error {
 	return nil
 }
 
+// deepSeekLogin 抽象 DeepSeek provider 的登录凭据设置接口。
 type deepSeekLogin interface {
 	SetAuthToken(string)
 	SetAccount(string)
@@ -101,6 +106,9 @@ type deepSeekLogin interface {
 	Token() string
 }
 
+// initDeepSeek 按优先级接入 DeepSeek 凭据：
+// 先尝试已保存的 token，再用账号密码登录。
+// 刷新后的 token 不写回配置文件（与 otter CLI 行为不同）。
 func initDeepSeek(ctx context.Context, ds deepSeekLogin, cfg *otterconfig.Config) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -122,10 +130,12 @@ func initDeepSeek(ctx context.Context, ds deepSeekLogin, cfg *otterconfig.Config
 		return err
 	}
 	ds.SetAuthToken(ds.Token())
-	// The refreshed token is intentionally not copied to cfg or saved.
+	// 刷新后的 token 有意不写回配置文件
 	return nil
 }
 
+// readOtterCookies 从指定路径或本地 Chrome 配置中读取 cookie。
+// 优先使用指定路径的 cookie 文件，找不到时回退到浏览器提取。
 func readOtterCookies(ctx context.Context, path string, domains ...string) ([]chrome.Cookie, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -145,8 +155,10 @@ func readOtterCookies(ctx context.Context, path string, domains ...string) ([]ch
 	return cookies, nil
 }
 
+// chatGPTBackend 将 ChatGPT 底层 API 适配为 otterBackend 接口。
 type chatGPTBackend struct{ api *api.ChatGPTAPI }
 
+// SendStream 通过 ChatGPT API 发送消息并返回流式事件通道。
 func (b *chatGPTBackend) SendStream(ctx context.Context, req *otter.SendRequest) (<-chan otter.StreamEvent, error) {
 	if err := safeOtterDebug(); err != nil {
 		return nil, err
@@ -156,6 +168,7 @@ func (b *chatGPTBackend) SendStream(ctx context.Context, req *otter.SendRequest)
 		return nil, err
 	}
 	out := make(chan otter.StreamEvent)
+	// 在后台 goroutine 中将 API 响应块转换为统一的 StreamEvent
 	go func() {
 		defer close(out)
 		for {
@@ -178,8 +191,10 @@ func (b *chatGPTBackend) SendStream(ctx context.Context, req *otter.SendRequest)
 	return out, nil
 }
 
+// geminiBackend 将 Gemini 底层 API 适配为 otterBackend 接口。
 type geminiBackend struct{ api *api.GeminiAPI }
 
+// SendStream 通过 Gemini API 发送消息并返回流式事件通道。
 func (b *geminiBackend) SendStream(ctx context.Context, req *otter.SendRequest) (<-chan otter.StreamEvent, error) {
 	var metadata []any
 	if raw := req.RemoteMetadata["gemini_metadata"]; raw != "" {
@@ -192,6 +207,8 @@ func (b *geminiBackend) SendStream(ctx context.Context, req *otter.SendRequest) 
 		return nil, err
 	}
 	out := make(chan otter.StreamEvent)
+	// 在后台 goroutine 中将 Gemini 响应块转换为统一的 StreamEvent，
+	// 并将 Gemini 特有的 metadata 序列化为 JSON 字符串。
 	go func() {
 		defer close(out)
 		for {

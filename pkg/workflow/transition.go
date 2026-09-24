@@ -27,32 +27,33 @@ type TransitionBuilder struct {
 	workflow   *Workflow
 }
 
-// To 设置目标状态。
+// To 设置目标状态
 func (b *TransitionBuilder) To(state string) *TransitionBuilder {
 	b.transition.To = state
 	return b
 }
 
-// Action 设置执行动作并将流转注册到 Workflow。
+// Action 设置执行动作并将流转注册到 Workflow，完成流转定义
 func (b *TransitionBuilder) Action(action string) *TransitionBuilder {
 	b.transition.Action = action
+	// 将完成的流转注册到 workflow 中
 	b.workflow.transitions = append(b.workflow.transitions, b.transition)
 	return b
 }
 
-// Guard 添加权限控制。
+// Guard 添加权限控制，可多次调用添加多个 Guard
 func (b *TransitionBuilder) Guard(guard Guard) *TransitionBuilder {
 	b.transition.Guards = append(b.transition.Guards, guard)
 	return b
 }
 
-// Condition 添加业务条件。
+// Condition 添加业务条件，可多次调用添加多个 Condition
 func (b *TransitionBuilder) Condition(cond Condition) *TransitionBuilder {
 	b.transition.Conditions = append(b.transition.Conditions, cond)
 	return b
 }
 
-// Hook 添加生命周期事件。
+// Hook 添加生命周期事件，可多次调用添加多个 Hook
 func (b *TransitionBuilder) Hook(hook Hook) *TransitionBuilder {
 	b.transition.Hooks = append(b.transition.Hooks, hook)
 	return b

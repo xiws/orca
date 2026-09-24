@@ -12,6 +12,7 @@ import (
 	"github.com/xiws/orca/internal/bootstrap"
 )
 
+// main 是 TUI 程序入口，运行失败时打印安全处理后的错误信息。
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "orca tui:", safeText(err.Error()))
@@ -19,6 +20,8 @@ func main() {
 	}
 }
 
+// run 负责参数校验、环境打开、构造 model 并运行 Bubble Tea 程序；
+// 退出时.join 命令 gate，再停止活跃运行，最后由 defer 关闭环境。
 func run() (err error) {
 	if len(os.Args) > 1 {
 		if len(os.Args) == 2 && (os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help") {
@@ -36,8 +39,8 @@ func run() (err error) {
 	defer cancel()
 	m := newModel(env.Service)
 	m.ctx = ctx
-	// Bubble Tea's default signal handler quits immediately. Route signals
-	// through Update instead, so it persists Cancel and waits before tea.Quit.
+	// Bubble Tea 默认的信号处理会立即退出。将信号路由到 Update，
+	// 以便在 tea.Quit 前持久化 Cancel 并等待。
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithoutSignalHandler())
 	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -54,9 +57,9 @@ func run() (err error) {
 	if last, ok := final.(model); ok {
 		last.stopObserving()
 	}
-	// A terminal failure may race an in-flight Submit before Update receives its
-	// RunID. Join the command gate first, then Cancel/Wait the actual run before
-	// Environment.Close joins workers and closes persistence.
+	// 终端失败可能与正在进行的 Submit 竞争，Update 尚未收到其 RunID。
+	// 先 .join 命令 gate，再对实际的 run 做 Cancel/Wait，最后由
+	// Environment.Close .join worker 并关闭持久化。
 	id := m.operations.finish()
 	err = errors.Join(err, stopActiveRun(context.Background(), env.Service, id))
 	return err

@@ -28,12 +28,14 @@ func writeAll(ws Workspace, path, content string) (string, error) {
 		return "", fmt.Errorf("create directory %s: %w", dir, err)
 	}
 
+	// 使用临时文件 + 原子重命名，避免写入中断导致数据损坏。
 	temp, err := os.CreateTemp(dir, ".orca-*")
 	if err != nil {
 		return "", fmt.Errorf("create temporary file in %s: %w", dir, err)
 	}
 	defer os.Remove(temp.Name())
 
+	// 保留已有文件的权限模式，新文件使用默认模式。
 	mode := os.FileMode(fileMode)
 	if info, err := os.Stat(resolved); err == nil {
 		mode = info.Mode().Perm()

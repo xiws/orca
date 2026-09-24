@@ -52,11 +52,13 @@ type CommandResult struct {
 	TaskTarget []TaskBaseInfo `json:"task_target,omitempty"`
 }
 
+// TaskBaseInfo 描述子任务的基本信息，用于 create_task 命令的返回结果。
 type TaskBaseInfo struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
+// String 以人类可读格式返回命令结果，成功时显示内容，失败时显示错误。
 func (u CommandResult) String() string {
 	if u.OK {
 		return fmt.Sprintf("task id:%d \ncommand:%s\nresult:%s", u.Id, u.Command, u.Content)
@@ -98,6 +100,7 @@ func ResultFor(cmd command.CommandOption, content string, err error) CommandResu
 
 // Register 为每个内置工具命令向 handle 添加处理器，将文件访问限定在 ws 范围内。
 func Register(handle *command.CommandHandle, ws Workspace) error {
+	// 将所有内置命令的选项和处理器配对注册。
 	entries := []struct {
 		option  command.CommandOption
 		handler command.CommandHandler

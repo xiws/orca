@@ -1,3 +1,4 @@
+// 文件读写工具实现：读取（带行号和截断）、写入（原子操作 + baseline 校验）
 package tools
 
 import (
@@ -18,15 +19,17 @@ import (
 )
 
 const (
-	maxReadBytes = 1 << 20
-	maxReadLines = 2000
+	maxReadBytes = 1 << 20 // 单次读取最大字节数：1 MiB
+	maxReadLines = 2000    // 单次读取最大行数
 )
 
+// contextReader 包装 io.Reader，每次 Read 前检查上下文是否已取消
 type contextReader struct {
 	ctx context.Context
 	r   io.Reader
 }
 
+// Read 实现 io.Reader，每次读取前检查上下文取消状态
 func (r contextReader) Read(p []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
@@ -34,8 +37,9 @@ func (r contextReader) Read(p []byte) (int, error) {
 	return r.r.Read(p)
 }
 
+// openRegular 以非阻塞方式打开普通文件，拒绝 FIFO 等特殊文件
 func openRegular(root *os.Root, name string) (*os.File, error) {
-	// Nonblocking open avoids hanging on a FIFO before the regular-file check.
+	// 非阻塞打开避免在 FIFO 上挂起
 	f, err := root.OpenFile(name, os.O_RDONLY|nonblock, 0)
 	if err != nil {
 		return nil, err
@@ -52,6 +56,7 @@ func openRegular(root *os.Root, name string) (*os.File, error) {
 	return f, nil
 }
 
+// read 读取工作区文件内容，支持按行范围截取，返回 SHA-256 和行号信息
 func (g *Gateway) read(ctx context.Context, call model.Call, args map[string]any) (Result, error) {
 	name, err := g.relative(stringArg(args, "filename"))
 	if err != nil {
@@ -68,6 +73,7 @@ func (g *Gateway) read(ctx context.Context, call model.Call, args map[string]any
 	}
 	start, end := intArg(args, "start", 1), intArg(args, "end", 0)
 	h := sha256.New()
+	// 使用 TeeReader 同步计算整个文件的 SHA-256
 	r := bufio.NewReaderSize(io.TeeReader(contextReader{ctx, f}, h), 32<<10)
 	var content strings.Builder
 	line, total, last := 1, 0, 0
@@ -77,6 +83,7 @@ func (g *Gateway) read(ctx context.Context, call model.Call, args map[string]any
 		if len(fragment) > 0 {
 			total = line
 			if line >= start && (end == 0 || line <= end) {
+				// 超过最大行数限制则截断
 				if line-start >= maxReadLines {
 					truncated = true
 				} else {
@@ -105,14 +112,15 @@ func (g *Gateway) read(ctx context.Context, call model.Call, args map[string]any
 	if err != nil {
 		return Result{}, err
 	}
+	// 读取后检查文件是否被外部修改，保证一致性
 	if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
 		return Result{}, fmt.Errorf("%w: file changed while reading; read it again", domain.ErrConflict)
 	}
 	return toolResult(call, map[string]any{"filename": name, "content": content.String(), "start": start, "end": last, "total_lines": total, "sha256": fmt.Sprintf("%x", h.Sum(nil)), "truncated": truncated}), nil
 }
 
-// baseline uses a pinned parent directory. Leaf symlinks are rejected for
-// mutation, rather than silently replacing a link instead of its target.
+// baseline 校验文件的基准状态：使用固定的父目录，拒绝叶子节点符号链接。
+// expected 为 "absent" 时期望文件不存在，否则校验 SHA-256 哈希是否匹配。
 func baseline(ctx context.Context, parent *os.Root, base, expected string, capture bool) ([]byte, os.FileMode, error) {
 	info, err := parent.Lstat(base)
 	if errors.Is(err, os.ErrNotExist) {
@@ -155,6 +163,7 @@ func baseline(ctx context.Context, parent *os.Root, base, expected string, captu
 	return data, info.Mode().Perm(), nil
 }
 
+// write 原子写入文件：先写入临时文件，校验基准状态后再重命名或硬链接
 func (g *Gateway) write(ctx context.Context, call model.Call, args map[string]any) (Result, error) {
 	name, err := g.relative(stringArg(args, "filename"))
 	if err != nil {
@@ -207,9 +216,7 @@ func (g *Gateway) write(ctx context.Context, call model.Call, args map[string]an
 	if err := errors.Join(writeErr, closeErr); err != nil {
 		return Result{}, err
 	}
-	// Recheck after staging the data. Gateway.mu spans both checks and the
-	// publication. This is not a compare-and-swap against unrelated editors:
-	// an external writer can still race the final check and rename.
+	// 写入完成后重新校验基准状态，确保没有并发修改
 	if _, _, err := baseline(ctx, parent, base, expected, false); err != nil {
 		return Result{}, err
 	}
@@ -217,8 +224,7 @@ func (g *Gateway) write(ctx context.Context, call model.Call, args map[string]an
 		return Result{}, err
 	}
 	if expected == "absent" {
-		// An atomic no-clobber publication: unlike Rename, Link cannot replace
-		// a file an external editor created after the absence check.
+		// 原子无冲突发布：Link 不会像 Rename 那样覆盖并发创建的文件
 		err = parent.Link(temp, base)
 	} else {
 		err = parent.Rename(temp, base)

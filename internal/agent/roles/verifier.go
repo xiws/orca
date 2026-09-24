@@ -39,7 +39,9 @@ type Issue struct {
 // Verifier 保留 read + bash 验证工具，且不超过调用方权限；bash 并非只读工具。
 // 输入：Specification（验收标准）+ 显式传入的 Executor 执行结果。
 func (v *Verifier) Verify(parentInv *core.Invocation, task *domain.Task, result string) (*VerifyResult, error) {
+	// 构建验证输入，包含验收标准和执行结果
 	userInput := v.buildVerifyInput(task, result)
+	// 在子 Invocation 中执行 LLM 对话，允许 read + bash 工具
 	output, err := runRole(v.Runtime, parentInv, verifierSystemPrompt, userInput, "read", "bash")
 	if err != nil {
 		return nil, fmt.Errorf("verifier: %w", err)
@@ -49,10 +51,11 @@ func (v *Verifier) Verify(parentInv *core.Invocation, task *domain.Task, result 
 }
 
 // buildVerifyInput 构建 Verifier 的输入，不改变任务原始需求。
+// 拼接顺序：验收标准 → 原始需求 → 执行结果 → 验证指令。
 func (v *Verifier) buildVerifyInput(task *domain.Task, result string) string {
 	var input string
 
-	// 验收标准
+	// 验收标准：Verifier 的核心判断依据
 	if task.Specification != nil && len(task.Specification.AcceptanceCriteria) > 0 {
 		input += "## 验收标准\n"
 		for _, c := range task.Specification.AcceptanceCriteria {
@@ -81,14 +84,14 @@ func (v *Verifier) buildVerifyInput(task *domain.Task, result string) string {
 }
 
 // parseVerifyResult 从 LLM 输出中解析 VerifyResult。
-// 当前简化实现：检查输出中是否包含 "PASS" 或 "FAIL" 关键字。
+// 当前简化实现：通过关键字检测判断验证是否通过。
+// TODO: 实现更精确的 JSON 解析。
 func parseVerifyResult(output string) (*VerifyResult, error) {
-	// TODO: 实现更精确的 JSON 解析
 	result := &VerifyResult{
 		Summary: output,
 	}
 
-	// 简单关键字检测
+	// 通过关键字匹配判断验证状态
 	if containsKeyword(output, "PASS", "通过", "成功", "完成") {
 		result.Passed = true
 	} else if containsKeyword(output, "FAIL", "失败", "错误", "问题") {

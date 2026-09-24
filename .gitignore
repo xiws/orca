@@ -41,3 +41,6 @@ orca-tui
 .orca/state.sqlite3-shm
 .orca/state.sqlite3-journal
 .orca/run.lock
+
+cli
+tui

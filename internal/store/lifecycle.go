@@ -8,6 +8,7 @@ import (
 	"github.com/xiws/orca/internal/domain"
 )
 
+// hasUnresolvedSQL 查询是否存在不确定的执行状态。
 const hasUnresolvedSQL = `SELECT EXISTS (
  SELECT 1 FROM runs AS r
  WHERE (? = 0 OR r.root_run_id = ?)
@@ -23,9 +24,9 @@ const hasUnresolvedSQL = `SELECT EXISTS (
  )
 )`
 
-// HasUnresolved reports uncertain execution in a run tree, or all runs when
-// rootID is zero. Active model/tool calls are not unresolved unless their run
-// is reconciling or stopped. Only scalar columns are read, never transcripts.
+// HasUnresolved 检查运行树中是否存在不确定的执行状态。
+// rootID 为 0 时检查所有运行。活跃的模型/工具调用在其运行处于 reconciling
+// 或停止状态之前不算未解决。仅读取标量列，不读取转录数据。
 func (s *Store) HasUnresolved(ctx context.Context, rootID domain.RunID) (bool, error) {
 	var unresolved bool
 	if err := s.db.QueryRowContext(ctx, hasUnresolvedSQL, rootID, rootID).Scan(&unresolved); err != nil {
@@ -34,14 +35,18 @@ func (s *Store) HasUnresolved(ctx context.Context, rootID domain.RunID) (bool, e
 	return unresolved, nil
 }
 
+// Tools 返回指定运行的所有工具执行记录。
 func (s *Store) Tools(ctx context.Context, runID domain.RunID) ([]domain.ToolExecution, error) {
 	return readMany[domain.ToolExecution](ctx, s.db, "SELECT data FROM tools WHERE run_id = ? ORDER BY key", runID)
 }
 
+// Inputs 返回指定运行的所有输入请求记录。
 func (s *Store) Inputs(ctx context.Context, runID domain.RunID) ([]domain.InputRequest, error) {
 	return readMany[domain.InputRequest](ctx, s.db, "SELECT data FROM inputs WHERE run_id = ? ORDER BY id", runID)
 }
 
+// DeleteSessions 按顺序删除一个或多个会话及其所有关联数据。
+// 如果会话存在活跃或未解决的执行则拒绝删除。
 func (s *Store) DeleteSessions(ctx context.Context, ids []domain.SessionID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -53,6 +58,7 @@ func (s *Store) DeleteSessions(ctx context.Context, ids []domain.SessionID) erro
 		return storageError(err)
 	}
 	defer tx.Rollback()
+	// 检查导入表是否存在。
 	var imports int
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'imported_sessions'").Scan(&imports); err != nil {
 		return err
@@ -62,6 +68,7 @@ func (s *Store) DeleteSessions(ctx context.Context, ids []domain.SessionID) erro
 		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM sessions WHERE id = ?", id).Scan(&exists); err != nil {
 			return storageError(err)
 		}
+		// 检查是否有活跃或未解决的执行，有则拒绝删除。
 		var blocked int
 		if err := tx.QueryRowContext(ctx, `SELECT
    (SELECT count(*) FROM runs WHERE session_id = ? AND state NOT IN ('succeeded','failed','cancelled')) +
@@ -72,11 +79,13 @@ func (s *Store) DeleteSessions(ctx context.Context, ids []domain.SessionID) erro
 		if blocked != 0 {
 			return fmt.Errorf("session %d has active or unresolved execution", id)
 		}
+		// 清理导入记录。
 		if imports > 0 {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM imported_sessions WHERE session_id = ?", id); err != nil {
 				return err
 			}
 		}
+		// 按外键依赖顺序删除所有关联数据。
 		statements := []string{
 			"DELETE FROM invocation_messages WHERE invocation_id IN (SELECT id FROM invocations WHERE run_id IN (SELECT id FROM runs WHERE session_id = ?))",
 			"DELETE FROM delegation_children WHERE delegation_key IN (SELECT key FROM delegations WHERE parent_run_id IN (SELECT id FROM runs WHERE session_id = ?))",

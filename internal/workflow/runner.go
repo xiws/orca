@@ -1,3 +1,4 @@
+// 工作流执行引擎：驱动多节点工作流的生命周期，包括调度、并发执行、委托和崩溃恢复
 package workflow
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// ExecutionStore 定义工作流运行所需的持久化存储接口
 type ExecutionStore interface {
 	Apply(context.Context, domain.Mutation) error
 	Session(context.Context, domain.SessionID) (*domain.Session, error)
@@ -28,20 +30,20 @@ type ExecutionStore interface {
 	Delegation(context.Context, string) (*domain.Delegation, error)
 }
 
+// AgentRunner 定义智能体执行接口，驱动单次模型调用并返回结果
 type AgentRunner interface {
 	Advance(context.Context, domain.InvocationID, string) agent.Outcome
 }
 
+// Runner 工作流执行器，管理并发调度和状态推进
 type Runner struct {
-	store  ExecutionStore
-	agent  AgentRunner
-	slots  chan struct{}
-	active sync.Map
+	store  ExecutionStore // 持久化存储
+	agent  AgentRunner    // 智能体执行器
+	slots  chan struct{}  // 并发控制信号量
+	active sync.Map       // 当前活跃的根运行ID集合
 }
 
-// The optional limit bounds active invocations, not waiting parents. Each tree
-// has one workflow writer. No workflow writes occur during its agent batch:
-// agents may reserve/settle the root budget without racing a stale root copy.
+// NewRunner 创建执行器，limit 控制并发调用的上限
 func NewRunner(store ExecutionStore, runner AgentRunner, concurrency ...int) *Runner {
 	limit := 4
 	if len(concurrency) > 0 && concurrency[0] > 0 {
@@ -50,13 +52,15 @@ func NewRunner(store ExecutionStore, runner AgentRunner, concurrency ...int) *Ru
 	return &Runner{store: store, agent: runner, slots: make(chan struct{}, limit)}
 }
 
+// work 表示一次待执行的节点调度单元
 type work struct {
 	runID        domain.RunID
 	nodeID       string
 	invocationID domain.InvocationID
-	resume       string
+	resume       string // 恢复时传递给智能体的续执行内容
 }
 
+// commit 将变更写入存储，统一包装为 ErrCheckpoint 错误
 func (w *Runner) commit(ctx context.Context, mutation domain.Mutation) error {
 	if err := w.store.Apply(ctx, mutation); err != nil {
 		return errors.Join(domain.ErrCheckpoint, err)
@@ -64,13 +68,15 @@ func (w *Runner) commit(ctx context.Context, mutation domain.Mutation) error {
 	return nil
 }
 
+// needsInterrupt 判断错误是否需要触发中断恢复流程
 func needsInterrupt(err error) bool {
 	return errors.Is(err, domain.ErrUnknown) || errors.Is(err, model.ErrUnknown) || errors.Is(err, domain.ErrCheckpoint) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
+// Drive 驱动根运行直到完成或中断，是工作流的主循环入口
 func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, error) {
 	if _, busy := w.active.LoadOrStore(rootID, struct{}{}); busy {
-		return nil, domain.ErrConflict
+		return nil, domain.ErrConflict // 同一根运行不允许并发驱动
 	}
 	defer w.active.Delete(rootID)
 	stop := func(err error) (*domain.Run, error) {
@@ -97,8 +103,7 @@ func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, e
 		if err != nil {
 			return stop(err)
 		}
-		// Recovery can leave only a descendant blocked. Surface that state before
-		// scheduling anything, including when the root is waiting on children.
+		// 恢复检查：先扫描是否有子孙运行处于阻塞状态，再调度新任务
 		var blocked error
 		for _, run := range runs {
 			if run.RootRunID != rootID {
@@ -116,6 +121,7 @@ func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, e
 		if blocked != nil {
 			return stop(blocked)
 		}
+		// 按创建时间排序，保证确定性调度
 		sort.Slice(runs, func(i, j int) bool {
 			if runs[i].CreatedAt == runs[j].CreatedAt {
 				return runs[i].ID < runs[j].ID
@@ -124,6 +130,7 @@ func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, e
 		})
 		var batch []work
 		progress := false
+		// 遍历所有运行，推进状态机并收集待执行的节点
 		for _, snapshot := range runs {
 			if snapshot.RootRunID != rootID || snapshot.State.Terminal() {
 				continue
@@ -147,8 +154,7 @@ func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, e
 	}
 }
 
-// advance only prepares durable checkpoints. It never calls the agent, so
-// preparation, finish, delegation and repair are serialized within a tree.
+// advance 推进单个运行的状态机，仅做持久化检查点，不调用智能体
 func (w *Runner) advance(ctx context.Context, id domain.RunID) ([]work, bool, error) {
 	run, err := w.store.Run(ctx, id)
 	if err != nil {
@@ -167,7 +173,7 @@ func (w *Runner) advance(ctx context.Context, id domain.RunID) ([]work, bool, er
 		return nil, false, fmt.Errorf("unsupported workflow version %d", run.TemplateVersion)
 	}
 	changed := false
-	// Resume may already have set Running. Freezing is independent of state.
+	// 冻结输入：与状态变更独立，确保输入在运行期间不可变
 	if !run.InputFrozen {
 		if err := w.freezeInput(ctx, run); err != nil {
 			return nil, false, err
@@ -206,7 +212,7 @@ func (w *Runner) advance(ctx context.Context, id domain.RunID) ([]work, bool, er
 				if err != nil {
 					return nil, false, err
 				}
-				// An absent link means the delegated outcome still needs committing.
+				// 缺少 link 表示委派结果尚未提交，需要继续处理。
 				key, err := pendingKey(inv)
 				if err != nil {
 					return nil, false, err
@@ -326,12 +332,12 @@ func (w *Runner) execute(ctx context.Context, rootID domain.RunID, batch []work)
 			}
 			outcomes[i] = w.agent.Advance(batchCtx, job.invocationID, job.resume)
 			if needsInterrupt(outcomes[i].Err) {
-				cancel() // Stop sibling work promptly; join it before recovery writes.
+				cancel() // 立即停止同批次的其他任务，在恢复写入前等待它们退出。
 			}
 		}(i, job)
 	}
 	wg.Wait()
-	// Do not commit another success from a batch with an uncertain outcome.
+	// 批次中存在不确定结果时，不提交其他成功状态。
 	var interrupted error
 	for _, out := range outcomes {
 		if needsInterrupt(out.Err) {
@@ -496,7 +502,7 @@ func (w *Runner) finish(ctx context.Context, run *domain.Run) error {
 		}
 		if !validEvidence(v, evidence) {
 			v.Status, v.Summary = "inconclusive", "Verifier cited missing, ambiguous, or fabricated validation evidence"
-			v.Evidence = nil // Do not publish fabricated IDs as accepted evidence.
+			v.Evidence = nil // 不发布伪造的 ID 作为已接受的证据。
 		} else if v.Status == "passed" && !validated {
 			v.Status, v.Summary = "inconclusive", "Latest validator must record every bash call completed with ok:true and explicit exit_code:0"
 		}
@@ -539,7 +545,7 @@ func (w *Runner) finish(ctx context.Context, run *domain.Run) error {
 }
 
 func (w *Runner) repair(ctx context.Context, run *domain.Run) (bool, error) {
-	// Delegated code remains the fast path; never expand its role graph.
+	// 委派代码保持为快速路径；不扩展其角色图。
 	if run.Mode != "agent" && run.Mode != "test" {
 		return false, nil
 	}
@@ -557,8 +563,8 @@ func (w *Runner) repair(ctx context.Context, run *domain.Run) (bool, error) {
 	if root.Repairs >= root.Limits.MaxRepairs {
 		return false, nil
 	}
-	// Root.Repairs is tree-wide. Attempts in the node graph track root-local
-	// rounds, while a child's Repairs tracks that child's local rounds.
+	// Root.Repairs 是树级计数。节点图中的 Attempt 跟踪根本地轮次，
+	// 而子级的 Repairs 跟踪该子级本地的轮次。
 	attempt := 1
 	for _, node := range run.Nodes {
 		if node.Role == "repair" {
@@ -635,8 +641,8 @@ func (w *Runner) invocationInput(ctx context.Context, inv *domain.Invocation) (*
 	return w.store.InputByCall(ctx, key)
 }
 
-// PendingInputs includes all invocations in the tree, not just Run.WaitingID.
-// It also finds inputs persisted before a workflow waiting checkpoint failed.
+// PendingInputs 包含树中所有调用的待处理输入，而不仅是 Run.WaitingID。
+// 它还会找到在工作流等待检查点失败之前已持久化的输入。
 func (w *Runner) PendingInputs(ctx context.Context, id domain.RunID) ([]domain.InputRequest, error) {
 	root, err := w.store.Run(ctx, id)
 	if err != nil {
@@ -728,8 +734,8 @@ func (w *Runner) failRun(ctx context.Context, run *domain.Run, reason error) err
 func (w *Runner) interrupt(ctx context.Context, rootID domain.RunID, reason error) (*domain.Run, error) {
 	unknown := errors.Is(reason, domain.ErrUnknown) || errors.Is(reason, model.ErrUnknown)
 	cancelled := false
-	// Only recovery state updates are retried. Reload every CAS participant; never
-	// replay execution or merge a stale successful batch over a cancellation.
+	// 仅重试恢复状态的更新。重新加载所有 CAS 参与者；绝不
+	// 重放执行或将过期的成功批次合并到取消操作上。
 	for tries := 0; tries < 8; tries++ {
 		runs, err := w.store.Runs(ctx)
 		if err != nil {
@@ -776,7 +782,7 @@ func (w *Runner) interrupt(ctx context.Context, rootID domain.RunID, reason erro
 			target := domain.Interrupted
 			switch {
 			case unknown && run.State == domain.Queued:
-				intermediate = true // queued -> interrupted -> reconciling
+				intermediate = true // 排队中 -> 已中断 -> 对账中
 			case unknown:
 				target = domain.Reconciling
 			case cancelled && run.State != domain.Cancelling:

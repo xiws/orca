@@ -18,7 +18,10 @@ type ToolBeforeEvent struct {
 	reasoning string // 模型对此工具调用的推理
 }
 
-func (e ToolBeforeEvent) GetId() int64    { return e.id }
+// GetId 返回事件的唯一标识。
+func (e ToolBeforeEvent) GetId() int64 { return e.id }
+
+// GetName 返回事件名称。
 func (e ToolBeforeEvent) GetName() string { return "ToolBeforeEvent" }
 
 // ToolName 返回命令名（"read"、"write"、"edit"、"bash"、"create_task"）。
@@ -54,6 +57,7 @@ func NewToolBeforeEvent(tool, file, meta, reasoning string, id int64) ToolBefore
 // 使用 glamour，带有工具特定的 emoji 和格式。
 type ToolEventBeforeHandler struct{}
 
+// Handle 处理 before-event，将结构化预览渲染为 markdown 输出到终端。
 func (b ToolEventBeforeHandler) Handle(ent event.Event) {
 	e, ok := ent.(ToolBeforeEvent)
 	if !ok {

@@ -14,14 +14,17 @@ type ReviewMode struct {
 	Runtime *core.Runtime
 }
 
+// Name 返回模式名称。
 func (m *ReviewMode) Name() string { return "review" }
 
+// Run 评审模式执行：注入评审系统提示词，限制工具为 read + bash，然后执行。
 func (m *ReviewMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
-	// 仅在当前 Invocation 注入评审系统提示词。
+	// 在消息历史最前面插入评审系统提示词
 	inv.Messages = append([]llm.ChatMessage{
 		{Role: llm.RoleSystem, Content: assets.ReviewPrompt},
 	}, inv.Messages...)
 
+	// 限制工具为 read 和 bash（bash 用于运行验证命令）
 	roles.RestrictTools(inv, "read", "bash")
 	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(inv)

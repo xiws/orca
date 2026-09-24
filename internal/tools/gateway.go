@@ -1,6 +1,6 @@
-// Package tools provides the single policy, approval, and execution boundary for
-// built-in tools. A Gateway serializes tools within its opened workspace. Bash
-// is an approved external operation, not a filesystem or security sandbox.
+// Package tools 提供内置工具的统一策略、审批和执行边界。
+// Gateway 在其打开的工作区内序列化工具调用。
+// Bash 是已批准的外部操作，而非文件系统或安全沙箱。
 package tools
 
 import (
@@ -18,23 +18,27 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// Ledger 定义工具执行记录的持久化接口
 type Ledger interface {
 	Apply(context.Context, domain.Mutation) error
 	Tool(context.Context, string) (*domain.ToolExecution, error)
 	InputByCall(context.Context, string) (*domain.InputRequest, error)
 }
 
+// Goal 表示委派任务的目标
 type Goal struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
 
+// Result 表示工具执行结果
 type Result struct {
-	Content string
-	Waiting *domain.InputRequest
-	Goals   []Goal
+	Content string               // 工具返回的 JSON 内容
+	Waiting *domain.InputRequest // 非 nil 表示正在等待用户输入
+	Goals   []Goal               // 委派任务的目标列表
 }
 
+// Gateway 是工具执行的网关，通过互斥锁序列化工作区内的工具调用
 type Gateway struct {
 	mu        sync.Mutex
 	root      *os.Root
@@ -43,6 +47,7 @@ type Gateway struct {
 	closed    bool
 }
 
+// New 创建新的工具网关，绑定到指定工作区和执行记录存储
 func New(workspace string, ledger Ledger) (*Gateway, error) {
 	if ledger == nil {
 		return nil, fmt.Errorf("tool ledger is required")
@@ -61,6 +66,7 @@ func New(workspace string, ledger Ledger) (*Gateway, error) {
 	return &Gateway{root: root, workspace: abs, ledger: ledger}, nil
 }
 
+// Close 关闭网关和工作区根目录
 func (g *Gateway) Close() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -71,6 +77,7 @@ func (g *Gateway) Close() error {
 	return g.root.Close()
 }
 
+// toolResult 构建工具成功执行的返回结果
 func toolResult(call model.Call, data map[string]any) Result {
 	data["call_id"] = call.ID
 	data["tool"] = call.Name
@@ -80,15 +87,14 @@ func toolResult(call model.Call, data map[string]any) Result {
 	b, _ := json.Marshal(data)
 	return Result{Content: string(b)}
 }
+
+// toolError 构建工具执行错误的返回结果
 func toolError(call model.Call, code string, err error) Result {
 	return toolResult(call, map[string]any{"ok": false, "error": map[string]string{"code": code, "message": err.Error()}})
 }
 
-// Execute reads the supplied current run and invocation policies on every call;
-// callers must pass current snapshots, not frozen policies from an earlier
-// turn. Policy persistence/reloading belongs to the runner. Waiting requests
-// are deliberately NOT written here: the runner commits them atomically with
-// its invocation phase and run state.
+// Execute 执行工具调用。每次调用时读取最新的 Run 和 Invocation 策略快照。
+// 等待请求不在此处写入：由 Runner 在提交 Invocation 阶段和 Run 状态时原子写入。
 func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invocation, call model.Call, key string) (Result, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -116,7 +122,7 @@ func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invo
 	if err != nil {
 		return toolError(call, "invalid_arguments", err), nil
 	}
-	// Reject lexical escapes before creating any approval or execution record.
+	// 在创建审批或执行记录之前，先拒绝词法逃逸路径
 	if name := stringArg(args, "filename"); name != "" {
 		if _, err := g.relative(name); err != nil {
 			return toolError(call, "invalid_path", err), nil
@@ -153,7 +159,7 @@ func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invo
 		case "completed":
 			return Result{Content: record.Result}, nil
 		case "prepared":
-			// Prepared proves that no external action has been started.
+			// prepared 状态证明尚未开始外部操作，可以继续
 		default:
 			return Result{}, domain.ErrUnknown
 		}
@@ -164,8 +170,7 @@ func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invo
 			return r, err
 		}
 	}
-	// Recheck immediately before preparing an operation; approval is not a
-	// substitute for current tool authorization.
+	// 执行操作前重新校验工具授权，审批不能替代当前授权检查
 	if !run.Policy.Intersect(inv.Policy).Allows(call.Name) {
 		return toolError(call, "not_allowed", fmt.Errorf("tool authorization was revoked")), nil
 	}
@@ -178,8 +183,7 @@ func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invo
 		if err := g.ledger.Apply(ctx, domain.Mutation{Tools: []*domain.ToolExecution{record}}); err != nil {
 			return Result{}, err
 		}
-		// Read the committed version rather than depending on whether Apply
-		// mutates its input pointers.
+		// 读取已提交的版本，不依赖 Apply 是否会修改输入指针
 		record, err = g.ledger.Tool(ctx, key)
 		if err != nil {
 			return Result{}, err
@@ -221,24 +225,24 @@ func (g *Gateway) Execute(ctx context.Context, run *domain.Run, inv *domain.Invo
 	done := *record
 	done.State, done.Result, done.ExitCode = "completed", r.Content, exitCode
 	if err := g.ledger.Apply(ctx, domain.Mutation{Tools: []*domain.ToolExecution{&done}}); err != nil {
-		// Never advertise success when its durable outcome was not committed.
-		// The started record intentionally prevents an automatic replay.
+		// 持久化成功结果失败时不返回成功，started 记录会阻止自动重试
 		return Result{}, errors.Join(domain.ErrUnknown, err)
 	}
 	return r, nil
 }
 
+// unknown 将工具执行标记为不确定状态，即使上下文已取消也会尝试记录
 func (g *Gateway) unknown(ctx context.Context, record *domain.ToolExecution, r Result, cause error) (Result, error) {
 	unknown := *record
 	unknown.State, unknown.Result = "unknown", r.Content
-	// Cancellation must not prevent recording an ambiguous side effect. If
-	// this best-effort commit fails, the durable started state is also unknown.
+	// 取消不能阻止记录不确定的副作用。使用独立上下文尽力提交
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	err := g.ledger.Apply(cleanup, domain.Mutation{Tools: []*domain.ToolExecution{&unknown}})
 	return Result{}, errors.Join(domain.ErrUnknown, cause, err)
 }
 
+// input 处理用户输入/审批请求的创建和状态查询
 func (g *Gateway) input(ctx context.Context, run *domain.Run, inv *domain.Invocation, call model.Call, key, canonical, kind string, auto bool) (Result, error) {
 	binding := struct {
 		Kind      string          `json:"kind"`
@@ -292,6 +296,7 @@ func (g *Gateway) input(ctx context.Context, run *domain.Run, inv *domain.Invoca
 	return Result{Waiting: &domain.InputRequest{ID: domain.InputRequestID(domain.NewID()), RunID: run.ID, InvocationID: inv.ID, Kind: kind, CallKey: key, Prompt: prompt, State: "pending", ExpiresAt: expires}}, nil
 }
 
+// relative 将路径转换为工作区内的相对路径，拒绝父目录遍历和路径逃逸
 func (g *Gateway) relative(name string) (string, error) {
 	if strings.IndexByte(name, 0) >= 0 {
 		return "", fmt.Errorf("path contains NUL")
@@ -318,6 +323,7 @@ func (g *Gateway) relative(name string) (string, error) {
 	return name, nil
 }
 
+// perform 根据工具名称分发到具体的执行函数
 func (g *Gateway) perform(ctx context.Context, call model.Call, args map[string]any) (Result, int, error) {
 	switch call.Name {
 	case "read":

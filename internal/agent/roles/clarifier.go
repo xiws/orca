@@ -46,6 +46,7 @@ type ClarifyResult struct {
 // Clarifier 只使用调用方已允许的 read 工具读取项目上下文。
 // 通过子 Invocation 执行独立的 LLM 对话。
 func (c *Clarifier) Clarify(parentInv *core.Invocation, input string) (*ClarifyResult, error) {
+	// 在子 Invocation 中执行 LLM 对话，限制工具为 read
 	output, err := runRole(c.Runtime, parentInv, clarifierSystemPrompt, input, "read")
 	if err != nil {
 		return nil, err

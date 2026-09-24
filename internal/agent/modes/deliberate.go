@@ -17,19 +17,24 @@ type DeliberateMode struct {
 	Runtime *core.Runtime
 }
 
+// Name 返回模式名称。
 func (m *DeliberateMode) Name() string { return "deliberate" }
 
+// Run 多角色辩论模式执行流程：
+// 1. Responder 生成初始回答
+// 2. 多个 Critic 从不同视角点评
+// 3. Judge 汇总所有观点，输出最终答案
 func (m *DeliberateMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
-	// 1. Responder：生成初始回答。
+	// 第一步：Responder 生成初始回答
 	answer, err := m.respond(inv)
 	if err != nil {
 		return "", fmt.Errorf("deliberate respond: %w", err)
 	}
 
-	// 2. Critics：多视角点评（含 Devil's Advocate）。
+	// 第二步：多视角点评（含 Devil's Advocate）
 	opinions := m.critics(inv, task.Input, answer)
 
-	// 3. Judge：汇总所有观点，输出最终答案。
+	// 第三步：Judge 汇总所有观点，输出最终答案
 	judge := &roles.Judge{Runtime: m.Runtime}
 	return judge.Synthesize(inv, task.Input, answer, opinions)
 }
@@ -44,7 +49,7 @@ func (m *DeliberateMode) respond(inv *core.Invocation) (string, error) {
 // critics 从多个视角对初始回答进行点评。
 // 返回各 Critic 的点评文本列表。
 func (m *DeliberateMode) critics(parentInv *core.Invocation, input, answer string) []string {
-	// 从嵌入的 prompt 文件中解析各视角。
+	// 从嵌入的 prompt 资源文件中按分隔符解析各视角的提示词
 	sections := strings.Split(assets.DeliberatePrompt, "\n---\n")
 	prompts := []struct {
 		name   string
@@ -55,6 +60,7 @@ func (m *DeliberateMode) critics(parentInv *core.Invocation, input, answer strin
 		{name: "Devil's Advocate（魔鬼代言人）", prompt: strings.TrimSpace(sections[2])},
 	}
 
+	// 依次运行各 Critic，收集点评结果
 	var opinions []string
 	for _, p := range prompts {
 		opinion, err := m.runCritic(parentInv, input, answer, p.prompt)
@@ -72,6 +78,7 @@ func (m *DeliberateMode) runCritic(parentInv *core.Invocation, input, answer, cr
 	return m.Runtime.Run(newCriticInvocation(parentInv, input, answer, criticPrompt))
 }
 
+// newCriticInvocation 为 Critic 创建独立的子调用上下文，继承模型和工作区。
 func newCriticInvocation(parentInv *core.Invocation, input, answer, criticPrompt string) *core.Invocation {
 	inv := parentInv.NewChild()
 	roles.RestrictTools(inv, "read")

@@ -1,3 +1,5 @@
+// Package store 提供基于 SQLite 的状态持久化存储，包括工作空间锁、WAL 日志、
+// CAS（比较并交换）更新、崩溃恢复以及外部数据导入功能。
 package store
 
 import (
@@ -19,14 +21,16 @@ import (
 	"github.com/xiws/orca/internal/domain"
 )
 
-// These wire types deliberately do not depend on the retired session/core/llm
-// packages. Never replace them with raw JSON or open-ended metadata maps: only
-// explicitly listed historical fields may reach SQLite (including its WAL).
+// 以下序列化类型刻意不依赖已废弃的 session/core/llm 包。
+// 不可使用原始 JSON 或开放式元数据映射替代：只有明确列出的历史字段才能进入 SQLite（含 WAL）。
+
+// ArchivedModel 归档的模型标识。
 type ArchivedModel struct {
 	Provider string `json:"provider"`
 	ModelID  string `json:"model_id"`
 }
 
+// ArchivedToolCall 归档的工具调用记录。
 type ArchivedToolCall struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -34,6 +38,7 @@ type ArchivedToolCall struct {
 	Reasoning string `json:"reasoning,omitempty"`
 }
 
+// ArchivedMessage 归档的对话消息。
 type ArchivedMessage struct {
 	ID         int64              `json:"id"`
 	Role       string             `json:"role"`
@@ -43,20 +48,21 @@ type ArchivedMessage struct {
 	CreateTime int64              `json:"create_time"`
 }
 
+// ArchivedUsage 归档的 token 使用统计。
 type ArchivedUsage struct {
 	PromptTokens     int64 `json:"prompt_tokens"`
 	CompletionTokens int64 `json:"completion_tokens"`
 	TotalTokens      int64 `json:"total_tokens"`
 }
 
-// ArchivedRemoteMetadata contains known continuation identifiers only. Unknown
-// metadata, authentication settings, and provider connection details are dropped.
+// ArchivedRemoteMetadata 仅包含已知的续接标识符，未知元数据、认证信息和提供方连接详情会被丢弃。
 type ArchivedRemoteMetadata struct {
 	Cursor               string `json:"cursor,omitempty"`
 	ConversationMetadata string `json:"conversation_metadata,omitempty"`
 	GeminiMetadata       string `json:"gemini_metadata,omitempty"`
 }
 
+// ArchivedOtterState 归档的 Otter 会话续接状态。
 type ArchivedOtterState struct {
 	ChatSessionID      string                  `json:"chat_session_id,omitempty"`
 	ParentMessageID    int64                   `json:"parent_message_id,omitempty"`
@@ -65,6 +71,7 @@ type ArchivedOtterState struct {
 	Delivered          int                     `json:"delivered"`
 }
 
+// ArchivedTranscript 归档的完整对话转录记录。
 type ArchivedTranscript struct {
 	Model      ArchivedModel       `json:"model"`
 	Messages   []ArchivedMessage   `json:"messages"`
@@ -72,6 +79,7 @@ type ArchivedTranscript struct {
 	OtterState *ArchivedOtterState `json:"otter_state,omitempty"`
 }
 
+// ArchivedInvocation 归档的单次调用记录，包含子调用。
 type ArchivedInvocation struct {
 	ID          int64                `json:"id"`
 	TaskID      domain.TaskID        `json:"task_id"`
@@ -83,24 +91,21 @@ type ArchivedInvocation struct {
 	Children    []ArchivedInvocation `json:"children,omitempty"`
 }
 
-// ImportArchive is an immutable, sanitized source snapshot for auditing counts
-// and content. All IDs here are SOURCE IDs, not live database references. Its
-// continuation identifiers must never initialize a new invocation or cursor.
-// Attachments in these formats are inline in message content and Task.Input.
+// ImportArchive 是不可变的、清洗后的源数据快照，用于审计计数和内容。
+// 此处所有 ID 均为源 ID，而非活跃数据库引用。续接标识不得用于初始化新的调用或游标。
 type ImportArchive struct {
-	SourcePath  string               `json:"source_path"`
-	SourceID    domain.SessionID     `json:"source_id"`
-	SHA256      string               `json:"sha256"`
-	Version     int                  `json:"version"` // 0 = unversioned legacy, 2 = v2
-	Session     *domain.Session      `json:"session"`
-	Tasks       []*domain.Task       `json:"tasks"`
-	Invocations []ArchivedInvocation `json:"invocations"`
-	Legacy      *ArchivedTranscript  `json:"legacy,omitempty"`
+	SourcePath  string               `json:"source_path"`      // 源文件路径
+	SourceID    domain.SessionID     `json:"source_id"`        // 源会话 ID
+	SHA256      string               `json:"sha256"`           // 源文件 SHA256
+	Version     int                  `json:"version"`          // 0 = 无版本遗留格式，2 = v2
+	Session     *domain.Session      `json:"session"`          // 会话数据
+	Tasks       []*domain.Task       `json:"tasks"`            // 任务列表
+	Invocations []ArchivedInvocation `json:"invocations"`      // 调用记录
+	Legacy      *ArchivedTranscript  `json:"legacy,omitempty"` // 遗留格式转录
 }
 
-// The extension is created lazily, in the same transaction as the import. This
-// supports databases opened before the importer existed without changing the
-// core schema version. The composite primary key is the provenance index.
+// importSchema 延迟创建导入记录表，与导入操作在同一事务中。
+// 复合主键为来源索引。
 const importSchema = `CREATE TABLE IF NOT EXISTS imported_sessions (
  source_path TEXT NOT NULL,
  source_id INTEGER NOT NULL CHECK(source_id > 0),
@@ -110,8 +115,8 @@ const importSchema = `CREATE TABLE IF NOT EXISTS imported_sessions (
  PRIMARY KEY(source_path, source_id, source_sha256)
 )`
 
-// Import reads but never changes the source file. An explicit owner authorizes
-// reassignment, but must resolve to the workspace of this open database.
+// Import 从外部 JSON 文件导入会话数据，只读不修改源文件。
+// owner 授权重新分配所有权，但必须解析为此数据库的工作空间。
 func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionID, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -122,7 +127,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 		return 0, sql.ErrConnDone
 	}
 
-	// Derive ownership from the actual main database, not CWD or the source path.
+	// 从实际的主数据库推导所有权，而非 CWD 或源路径。
 	var databasePath string
 	if err := s.db.QueryRowContext(ctx, "SELECT file FROM pragma_database_list WHERE name = 'main'").Scan(&databasePath); err != nil {
 		return 0, storageError(err)
@@ -131,6 +136,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 	if err != nil {
 		return 0, fmt.Errorf("resolve database workspace: %w", err)
 	}
+	// 校验 owner 路径。
 	if owner != "" {
 		if !filepath.IsAbs(owner) {
 			return 0, fmt.Errorf("import owner must be an absolute workspace path")
@@ -144,6 +150,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 		}
 	}
 
+	// 规范化源路径并读取文件。
 	source, err := canonicalImportPath(path)
 	if err != nil {
 		return 0, fmt.Errorf("resolve import source: %w", err)
@@ -163,6 +170,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 	if err != nil {
 		return 0, err
 	}
+	// 未指定 owner 时校验归属。
 	if owner == "" && !importBelongsTo(archive, workspace) {
 		return 0, fmt.Errorf("source workspace is missing, ambiguous, or different; specify an explicit owner matching the open database workspace")
 	}
@@ -170,8 +178,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 	archive.SourceID = archive.Session.ID
 	digest := sha256.Sum256(data)
 	archive.SHA256 = hex.EncodeToString(digest[:])
-	// Marshal the whitelist BEFORE opening a write transaction. Raw source bytes
-	// (which can contain credentials) are never passed to a SQL operation.
+	// 在开启写事务之前序列化白名单字段，原始字节（可能含凭证）不传入 SQL 操作。
 	archived, err := json.Marshal(archive)
 	if err != nil {
 		return 0, err
@@ -181,6 +188,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 		return 0, err
 	}
 
+	// 在事务中执行导入：先检查是否已导入，再应用变更。
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, storageError(err)
@@ -193,7 +201,7 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 	err = tx.QueryRowContext(ctx, `SELECT session_id FROM imported_sessions
  WHERE source_path = ? AND source_id = ? AND source_sha256 = ?`, source, archive.SourceID, archive.SHA256).Scan(&id)
 	if err == nil {
-		return id, nil
+		return id, nil // 已导入过，返回已有 ID。
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, storageError(err)
@@ -210,20 +218,22 @@ func (s *Store) Import(ctx context.Context, path, owner string) (domain.SessionI
 	if err := tx.Commit(); err != nil {
 		return 0, storageError(err)
 	}
+	// 事务提交成功后执行回调。
 	for _, update := range committed {
 		update()
 	}
 	return id, nil
 }
 
-// Archive queries the sanitized source, including complete recursive transcripts
-// and per-invocation usage. A non-imported session has no archive.
+// Archive 查询已导入会话的清洗后源数据快照，包括完整的递归转录和每次调用的使用统计。
+// 未导入的会话没有归档。
 func (s *Store) Archive(ctx context.Context, id domain.SessionID) (*ImportArchive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil, sql.ErrConnDone
 	}
+	// 检查导入表是否存在（延迟创建）。
 	var exists int
 	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'imported_sessions'").Scan(&exists); err != nil {
 		return nil, storageError(err)
@@ -234,6 +244,7 @@ func (s *Store) Archive(ctx context.Context, id domain.SessionID) (*ImportArchiv
 	return readOne[ImportArchive](ctx, s.db, "SELECT data FROM imported_sessions WHERE session_id = ?", id)
 }
 
+// canonicalImportPath 将路径解析为绝对路径并跟随符号链接。
 func canonicalImportPath(path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -242,6 +253,7 @@ func canonicalImportPath(path string) (string, error) {
 	return filepath.EvalSymlinks(absolute)
 }
 
+// importBelongsTo 校验导入数据的 project_path 是否都匹配目标工作空间。
 func importBelongsTo(archive *ImportArchive, workspace string) bool {
 	matches := func(path string) bool {
 		if !filepath.IsAbs(path) {
@@ -253,6 +265,7 @@ func importBelongsTo(archive *ImportArchive, workspace string) bool {
 	if !matches(archive.Session.ProjectPath) {
 		return false
 	}
+	// 递归校验所有调用的 project_path。
 	var check func([]ArchivedInvocation) bool
 	check = func(invocations []ArchivedInvocation) bool {
 		for _, inv := range invocations {
@@ -265,6 +278,7 @@ func importBelongsTo(archive *ImportArchive, workspace string) bool {
 	return check(archive.Invocations)
 }
 
+// decodeImport 解码导入 JSON 数据，支持 v2 和无版本遗留格式。
 func decodeImport(data []byte) (*ImportArchive, error) {
 	if err := validateImportJSON(data); err != nil {
 		return nil, err
@@ -281,7 +295,7 @@ func decodeImport(data []byte) (*ImportArchive, error) {
 		if err := json.Unmarshal(header.Version, &version); err != nil || version != 2 {
 			return nil, fmt.Errorf("unsupported import version (only unversioned legacy or version 2 are supported)")
 		}
-		// Decode only source fields, never caller-supplied provenance.
+		// 仅解码源字段，不解码调用方提供的来源信息。
 		var record struct {
 			Session     *domain.Session      `json:"session"`
 			Tasks       []*domain.Task       `json:"tasks"`
@@ -295,6 +309,7 @@ func decodeImport(data []byte) (*ImportArchive, error) {
 		archive.Session, archive.Tasks = record.Session, record.Tasks
 		archive.Invocations, archive.Legacy = record.Invocations, record.Legacy
 	} else {
+		// 遗留格式解码。
 		var old struct {
 			ID          domain.SessionID `json:"id"`
 			Title       string           `json:"title"`
@@ -327,8 +342,8 @@ func decodeImport(data []byte) (*ImportArchive, error) {
 	return archive, nil
 }
 
-// encoding/json silently accepts duplicate keys, case aliases and invalid UTF-8.
-// Reject them before typed decoding, including duplicates in discarded fields.
+// validateImportJSON 在类型化解码前拒绝重复键、大小写别名和无效 UTF-8，
+// 因为 encoding/json 会静默接受这些问题。
 func validateImportJSON(data []byte) error {
 	if !utf8.Valid(data) {
 		return fmt.Errorf("invalid import JSON: invalid UTF-8")
@@ -362,8 +377,7 @@ func validateImportJSON(data []byte) error {
 				if !ok {
 					return fmt.Errorf("invalid import JSON object key")
 				}
-				// Use the smallest rune in each SimpleFold cycle, including
-				// non-ASCII aliases (e.g. Kelvin sign), like encoding/json.
+				// 使用 SimpleFold 循环中最小的 rune，与 encoding/json 保持一致。
 				name = strings.Map(func(r rune) rune {
 					for {
 						next := unicode.SimpleFold(r)
@@ -404,6 +418,7 @@ func validateImportJSON(data []byte) error {
 	return nil
 }
 
+// validateImportRecord 校验导入记录的完整性和一致性。
 func validateImportRecord(a *ImportArchive) error {
 	if a.Session == nil || a.Session.ID <= 0 {
 		return fmt.Errorf("import session must have a positive ID")
@@ -411,6 +426,7 @@ func validateImportRecord(a *ImportArchive) error {
 	if a.Session.Version < 0 {
 		return fmt.Errorf("invalid import session version")
 	}
+	// 校验任务 ID 唯一性和会话归属。
 	tasks := make(map[domain.TaskID]*domain.Task)
 	for _, task := range a.Tasks {
 		if task == nil || task.ID <= 0 || tasks[task.ID] != nil {
@@ -424,7 +440,7 @@ func validateImportRecord(a *ImportArchive) error {
 		}
 		tasks[task.ID] = task
 	}
-	// Validate parent references and cycles before any remapping can hide them.
+	// 在任何 ID 重映射之前校验父引用和循环依赖。
 	visited := make(map[domain.TaskID]uint8)
 	var visit func(domain.TaskID) error
 	visit = func(id domain.TaskID) error {
@@ -453,6 +469,7 @@ func validateImportRecord(a *ImportArchive) error {
 			return err
 		}
 	}
+	// 校验会话消息时间线。
 	messages := make(map[int64]bool)
 	for _, message := range a.Session.Messages {
 		if message.ID <= 0 || messages[message.ID] {
@@ -466,11 +483,13 @@ func validateImportRecord(a *ImportArchive) error {
 			return fmt.Errorf("import message refers to unknown task")
 		}
 	}
+	// 校验遗留转录。
 	if a.Legacy != nil {
 		if err := validateImportTranscript(a.Legacy.Messages, a.Legacy.TotalUsage, a.Legacy.OtterState); err != nil {
 			return err
 		}
 	}
+	// 递归校验调用记录。
 	seen := make(map[int64]bool)
 	var invocations func([]ArchivedInvocation) error
 	invocations = func(list []ArchivedInvocation) error {
@@ -494,6 +513,7 @@ func validateImportRecord(a *ImportArchive) error {
 	return invocations(a.Invocations)
 }
 
+// validateImportTranscript 校验单次转录的消息、使用量和续接状态。
 func validateImportTranscript(messages []ArchivedMessage, usage ArchivedUsage, state *ArchivedOtterState) error {
 	if usage.PromptTokens < 0 || usage.CompletionTokens < 0 || usage.TotalTokens < 0 {
 		return fmt.Errorf("invalid import usage")
@@ -523,6 +543,8 @@ func validateImportTranscript(messages []ArchivedMessage, usage ArchivedUsage, s
 	return nil
 }
 
+// importTimeline 从归档消息中提取会话时间线消息，
+// 过滤掉仅有工具调用的助手中间消息，保留有实质内容的消息。
 func importTimeline(messages []ArchivedMessage) []domain.Message {
 	var timeline []domain.Message
 	pending := -1
@@ -546,6 +568,7 @@ func importTimeline(messages []ArchivedMessage) []domain.Message {
 			hasUser = true
 		case "assistant":
 			pending = -1
+			// 仅保留有文本内容且无工具调用的助手消息。
 			if hasUser && len(message.ToolCalls) == 0 && message.ToolCallID == "" && strings.TrimSpace(message.Content) != "" {
 				pending = i
 			}
@@ -557,8 +580,9 @@ func importTimeline(messages []ArchivedMessage) []domain.Message {
 	return timeline
 }
 
+// remapImport 将导入数据的 ID 重映射为新的唯一 ID，避免与现有数据冲突。
+// 不修改原始快照，并避免偶然复用源 ID。
 func remapImport(archive *ImportArchive, workspace string) domain.Mutation {
-	// Do not mutate the audit snapshot. Avoid reusing even a source ID by chance.
 	used := map[int64]bool{int64(archive.Session.ID): true}
 	for _, task := range archive.Tasks {
 		used[int64(task.ID)] = true
@@ -566,6 +590,7 @@ func remapImport(archive *ImportArchive, workspace string) domain.Mutation {
 	for _, message := range archive.Session.Messages {
 		used[message.ID] = true
 	}
+	// 生成不冲突的新 ID。
 	fresh := func() int64 {
 		for {
 			id := domain.NewID()
@@ -577,6 +602,7 @@ func remapImport(archive *ImportArchive, workspace string) domain.Mutation {
 	}
 	session := *archive.Session
 	session.ID, session.Version, session.ProjectPath = domain.SessionID(fresh()), 0, workspace
+	// 建立旧任务 ID 到新 ID 的映射。
 	taskIDs := make(map[domain.TaskID]domain.TaskID, len(archive.Tasks))
 	for _, task := range archive.Tasks {
 		taskIDs[task.ID] = domain.TaskID(fresh())
@@ -585,11 +611,12 @@ func remapImport(archive *ImportArchive, workspace string) domain.Mutation {
 	for _, old := range archive.Tasks {
 		task := *old
 		task.ID, task.SessionID, task.ParentTaskID = taskIDs[old.ID], session.ID, taskIDs[old.ParentTaskID]
-		if task.Version == 0 { // pre-versioning v2 files represent the first specification
+		if task.Version == 0 { // 无版本控制的 v2 文件表示首次规格化。
 			task.Version = 1
 		}
 		mutation.Tasks = append(mutation.Tasks, &task)
 	}
+	// 重映射消息 ID 和任务引用。
 	session.Messages = make([]domain.Message, len(archive.Session.Messages))
 	for i, old := range archive.Session.Messages {
 		message := old

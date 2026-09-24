@@ -1,3 +1,4 @@
+// 工具定义注册表：JSON Schema 验证 + 参数解析
 package tools
 
 import (
@@ -13,8 +14,8 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
-// schema is both the published contract and the runtime validator. Do not add
-// argument decoding rules independently of this registry.
+// schema 既是发布给模型的契约，也是运行时验证器。
+// 参数解析规则必须与此注册表保持一致。
 type schema struct {
 	Type                 string             `json:"type"`
 	Description          string             `json:"description,omitempty"`
@@ -29,17 +30,21 @@ type schema struct {
 	MinItems             int                `json:"minItems,omitempty"`
 }
 
+// entry 定义单个工具的注册条目
 type entry struct {
-	name, description string
-	parameters        *schema
-	sideEffect        bool
-	control           bool
+	name, description string  // 工具名称和描述
+	parameters        *schema // 参数 Schema
+	sideEffect        bool    // 是否有副作用（需要审批）
+	control           bool    // 是否为控制流工具（不直接执行）
 }
 
+// object 构建 object 类型的 Schema
 func object(properties map[string]*schema, required ...string) *schema {
 	no := false
 	return &schema{Type: "object", Properties: properties, Required: required, AdditionalProperties: &no}
 }
+
+// text 构建 string 类型的 Schema，nonempty 时要求非空
 func text(description string, nonempty bool) *schema {
 	s := &schema{Type: "string", Description: description}
 	if nonempty {
@@ -48,9 +53,13 @@ func text(description string, nonempty bool) *schema {
 	}
 	return s
 }
+
+// integer 构建 integer 类型的 Schema，带最小/最大值约束
 func integer(description string, min, max int) *schema {
 	return &schema{Type: "integer", Description: description, Minimum: min, Maximum: max}
 }
+
+// hash 构建 SHA-256 哈希验证的 Schema，allowAbsent 允许 "absent" 表示新建文件
 func hash(allowAbsent bool) *schema {
 	pattern := `^[0-9a-f]{64}$`
 	if allowAbsent {
@@ -59,6 +68,7 @@ func hash(allowAbsent bool) *schema {
 	return &schema{Type: "string", Description: "SHA-256 from read; use absent only to create a new file", Pattern: pattern}
 }
 
+// registry 注册所有内置工具的定义
 var registry = []entry{
 	{"read", "Read a workspace file. Return at most 1 MiB and 2000 lines, with a SHA-256 of the entire file (streamed). Line bounds are inclusive.", object(map[string]*schema{
 		"filename": text("Absolute or workspace-relative filename", true),
@@ -92,6 +102,7 @@ var registry = []entry{
 	}, "prompt"), false, true},
 }
 
+// Definitions 根据策略过滤后返回可用的工具定义列表
 func (g *Gateway) Definitions(policy domain.Policy) []model.Tool {
 	out := make([]model.Tool, 0, len(registry))
 	for _, e := range registry {
@@ -103,6 +114,7 @@ func (g *Gateway) Definitions(policy domain.Policy) []model.Tool {
 	return out
 }
 
+// lookup 按名称查找工具注册条目
 func lookup(name string) *entry {
 	for i := range registry {
 		if registry[i].name == name {
@@ -112,9 +124,8 @@ func lookup(name string) *entry {
 	return nil
 }
 
-// decodeJSON rejects duplicate keys as well as trailing JSON. The ordinary
-// encoding/json map decoder silently accepts duplicate keys, which is unsafe
-// for an approval binding.
+// decodeJSON 严格解码 JSON：拒绝重复键和尾部数据。
+// 普通的 encoding/json map 解码器会静默接受重复键，对审批绑定不安全。
 func decodeJSON(d *json.Decoder, depth int) (any, error) {
 	if depth > 32 {
 		return nil, fmt.Errorf("JSON nesting is too deep")
@@ -162,6 +173,7 @@ func decodeJSON(d *json.Decoder, depth int) (any, error) {
 	}
 }
 
+// validate 根据 Schema 验证参数值，递归检查类型、必填字段、模式匹配等
 func (s *schema) validate(v any, path string) error {
 	bad := func(message string) error { return fmt.Errorf("%s: %s", path, message) }
 	switch s.Type {
@@ -226,6 +238,7 @@ func (s *schema) validate(v any, path string) error {
 	return nil
 }
 
+// parse 解析并验证工具的 JSON 参数，返回解析后的参数 map、规范化 JSON 字符串
 func (e *entry) parse(raw string) (map[string]any, string, error) {
 	if !utf8.ValidString(raw) {
 		return nil, "", fmt.Errorf("arguments must be UTF-8")
@@ -253,7 +266,10 @@ func (e *entry) parse(raw string) (map[string]any, string, error) {
 	return args, string(b), err
 }
 
+// stringArg 从参数 map 中提取字符串值
 func stringArg(args map[string]any, name string) string { s, _ := args[name].(string); return s }
+
+// intArg 从参数 map 中提取整数值，不存在时返回默认值
 func intArg(args map[string]any, name string, fallback int) int {
 	if n, ok := args[name].(json.Number); ok {
 		v, _ := strconv.Atoi(string(n))

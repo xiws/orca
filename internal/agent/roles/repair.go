@@ -27,7 +27,9 @@ type RepairResult struct {
 // 输入：原始 Specification + VerifyResult（失败原因）。
 // 输出：修复指令，交给 Executor 执行；仅使用调用方已允许的 read 工具。
 func (r *Repair) Repair(parentInv *core.Invocation, task *domain.Task, verifyResult *VerifyResult) (*RepairResult, error) {
+	// 构建包含原始需求和失败原因的输入
 	userInput := r.buildRepairInput(task, verifyResult)
+	// 在子 Invocation 中执行 LLM 对话，限制工具为 read
 	output, err := runRole(r.Runtime, parentInv, repairSystemPrompt, userInput, "read")
 	if err != nil {
 		return nil, fmt.Errorf("repair: %w", err)
@@ -36,7 +38,8 @@ func (r *Repair) Repair(parentInv *core.Invocation, task *domain.Task, verifyRes
 	return parseRepairResult(output)
 }
 
-// buildRepairInput 构建 Repair 的输入。
+// buildRepairInput 构建 Repair 的输入文本。
+// 拼接顺序：原始需求 → 验收标准 → 验证失败原因 → 修复指令。
 func (r *Repair) buildRepairInput(task *domain.Task, verifyResult *VerifyResult) string {
 	var input string
 

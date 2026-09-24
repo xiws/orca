@@ -14,6 +14,7 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// Apply 在单个事务中应用领域变更（Mutation），提交成功后执行回调更新版本号
 func (s *Store) Apply(ctx context.Context, m domain.Mutation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -29,6 +30,7 @@ func (s *Store) Apply(ctx context.Context, m domain.Mutation) error {
 	if err != nil {
 		return storageError(err)
 	}
+	// 事务提交成功后执行回调，更新调用方持有的版本号
 	if err := tx.Commit(); err != nil {
 		return storageError(err)
 	}
@@ -38,10 +40,11 @@ func (s *Store) Apply(ctx context.Context, m domain.Mutation) error {
 	return nil
 }
 
-// Callbacks update caller-owned revisions only after a successful COMMIT,
-// including deferred foreign-key validation.
+// applyMutation 在事务中执行所有领域对象的持久化操作。
+// 回调函数在 COMMIT 成功后更新调用方的版本号，包含延迟外键校验。
 func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func(), error) {
 	var committed []func()
+	// 持久化 Session：CAS 更新 + 追加新消息
 	for _, session := range m.Sessions {
 		if session == nil {
 			return nil, fmt.Errorf("nil session")
@@ -61,6 +64,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 		}
 		committed = append(committed, func() { session.Version = next.Version })
 	}
+	// 持久化 Task：先注册 ID，再以不可变方式写入
 	for _, task := range m.Tasks {
 		if task == nil {
 			return nil, fmt.Errorf("nil task")
@@ -74,8 +78,8 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 			return nil, err
 		}
 	}
-	// Release active-task uniqueness before inserting a replacement run, regardless
-	// of the caller's slice order. The entire handoff is still one transaction.
+	// 先处理终态 Run 以释放 active-task 唯一性约束，再插入替代 Run。
+	// 整个切换仍在同一事务中完成，与调用方传入的切片顺序无关。
 	runs := make([]*domain.Run, 0, len(m.Runs))
 	for _, run := range m.Runs {
 		if run == nil {
@@ -90,6 +94,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 			runs = append(runs, run)
 		}
 	}
+	// 持久化 Run：CAS 更新，校验状态转换合法性
 	for _, run := range runs {
 		old, err := readOne[domain.Run](ctx, tx, "SELECT data FROM runs WHERE id = ?", run.ID)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -116,6 +121,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 		}
 		committed = append(committed, func() { run.Version = next.Version })
 	}
+	// 持久化 Invocation：CAS 更新，校验归属 Run 和上下文版本不可回退
 	for _, invocation := range m.Invocations {
 		if invocation == nil {
 			return nil, fmt.Errorf("nil invocation")
@@ -153,6 +159,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 		}
 		committed = append(committed, func() { invocation.Version = next.Version })
 	}
+	// 持久化 InputRequest：CAS 更新
 	for _, input := range m.Inputs {
 		if input == nil {
 			return nil, fmt.Errorf("nil input")
@@ -165,6 +172,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 		}
 		committed = append(committed, func() { input.Version = next.Version })
 	}
+	// 持久化 ToolExecution：CAS 更新
 	for _, tool := range m.Tools {
 		if tool == nil {
 			return nil, fmt.Errorf("nil tool")
@@ -177,6 +185,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 		}
 		committed = append(committed, func() { tool.Version = next.Version })
 	}
+	// 持久化 Delegation：不可变写入，首次插入时记录子 Run 列表
 	for _, delegation := range m.Delegations {
 		if delegation == nil {
 			return nil, fmt.Errorf("nil delegation")
@@ -194,6 +203,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 			}
 		}
 	}
+	// 持久化 Artifact：不可变写入
 	for _, artifact := range m.Artifacts {
 		if artifact == nil {
 			return nil, fmt.Errorf("nil artifact")
@@ -203,6 +213,7 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 			return nil, err
 		}
 	}
+	// 持久化 Event：插入事件记录，回调中回填自增序号
 	for i := range m.Events {
 		event := m.Events[i]
 		result, err := tx.ExecContext(ctx, "INSERT INTO events(sequence, run_id, invocation_id, assistant_sequence, kind, content) VALUES(?,?,?,?,?,?)",
@@ -219,6 +230,8 @@ func applyMutation(ctx context.Context, tx *sql.Tx, m domain.Mutation) ([]func()
 	return committed, nil
 }
 
+// putCAS 执行 compare-and-swap 更新：version=0 时插入新行，否则
+// 仅当当前版本匹配时更新，受影响的行数必须恰好为 1。
 func putCAS(ctx context.Context, tx *sql.Tx, table, keyColumn string, key any, version int64, value any, columns []string, values []any) error {
 	if version < 0 || version == math.MaxInt64 {
 		return domain.ErrConflict
@@ -254,11 +267,14 @@ func putCAS(ctx context.Context, tx *sql.Tx, table, keyColumn string, key any, v
 	return nil
 }
 
+// insertSQL 构建 INSERT 语句
 func insertSQL(table string, columns []string) string {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(columns)), ",")
 	return "INSERT INTO " + table + " (" + strings.Join(columns, ",") + ") VALUES (" + placeholders + ")"
 }
 
+// putImmutable 以不可变方式写入：若行已存在则比较 JSON 内容是否一致，
+// 不一致则报错；若不存在则插入新行。返回是否为新插入。
 func putImmutable(ctx context.Context, tx *sql.Tx, table, where string, args []any, columns []string, values []any, value any) (bool, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -281,8 +297,8 @@ func putImmutable(ctx context.Context, tx *sql.Tx, table, where string, args []a
 	return err == nil, err
 }
 
-// comparePrefix checks the complete committed prefix but never updates or
-// deletes it. Only the suffix is inserted, independently of metadata updates.
+// comparePrefix 校验已提交的消息前缀是否与内存中的记录一致，
+// 只返回需要追加的消息起始位置，不会修改或删除已有记录。
 func comparePrefix[T any](ctx context.Context, tx *sql.Tx, query string, args []any, messages []T) (int, error) {
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -311,6 +327,7 @@ func comparePrefix[T any](ctx context.Context, tx *sql.Tx, query string, args []
 	return count, rows.Err()
 }
 
+// appendSessionMessages 校验前缀一致性后追加 Session 新消息
 func appendSessionMessages(ctx context.Context, tx *sql.Tx, session *domain.Session) error {
 	start, err := comparePrefix(ctx, tx, "SELECT sequence, data FROM session_messages WHERE session_id = ? ORDER BY sequence", []any{session.ID}, session.Messages)
 	if err != nil {
@@ -329,6 +346,7 @@ func appendSessionMessages(ctx context.Context, tx *sql.Tx, session *domain.Sess
 	return nil
 }
 
+// appendInvocationMessages 校验前缀一致性后追加 Invocation 线程的新消息
 func appendInvocationMessages(ctx context.Context, tx *sql.Tx, invocation *domain.Invocation) error {
 	start, err := comparePrefix(ctx, tx, "SELECT sequence, data FROM invocation_messages WHERE invocation_id = ? AND context_version = ? ORDER BY sequence", []any{invocation.ID, invocation.Thread.ContextVersion}, invocation.Thread.Messages)
 	if err != nil {

@@ -1,8 +1,12 @@
+// Package store 提供基于 SQLite 的状态持久化存储，包括工作空间锁、WAL 日志、
+// CAS（比较并交换）更新、崩溃恢复以及外部数据导入功能。
 package store
 
+// schemaVersion 当前数据库 schema 版本号。
 const schemaVersion = 2
 
-// All references are deferred so a Mutation can introduce an entire graph at once.
+// schema 定义所有表的 DDL。所有外键引用均为延迟校验，
+// 允许 Mutation 一次性引入整个关系图。
 const schema = `
 CREATE TABLE sessions (
  id INTEGER PRIMARY KEY, version INTEGER NOT NULL CHECK(version > 0), data TEXT NOT NULL
@@ -27,6 +31,7 @@ CREATE TABLE runs (
  FOREIGN KEY(task_id, task_version) REFERENCES tasks(id, version) DEFERRABLE INITIALLY DEFERRED,
  FOREIGN KEY(id, waiting_id) REFERENCES inputs(run_id, id) DEFERRABLE INITIALLY DEFERRED
 );
+-- 每个任务只允许一个活跃运行（非终态）。
 CREATE UNIQUE INDEX one_active_run_per_task ON runs(task_id)
  WHERE state NOT IN ('succeeded','failed','cancelled');
 CREATE TABLE invocations (

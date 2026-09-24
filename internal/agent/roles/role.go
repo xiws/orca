@@ -1,3 +1,5 @@
+// Package roles 定义 Agent 的各种角色（Clarifier、Executor、Planner、Verifier 等），
+// 以及角色的公共基础设施（工具权限限制、角色调用上下文创建）。
 package roles
 
 import (
@@ -14,6 +16,7 @@ func RestrictTools(inv *core.Invocation, allowedTools ...string) {
 	inherited := inv.Provider.AllowedTools
 	restricted := make([]string, 0, len(allowedTools))
 	for _, tool := range allowedTools {
+		// 只有继承权限允许（或未限制）的工具才加入白名单
 		if inherited == nil || slices.Contains(inherited, tool) {
 			restricted = append(restricted, tool)
 		}
@@ -22,6 +25,7 @@ func RestrictTools(inv *core.Invocation, allowedTools ...string) {
 }
 
 // newRoleInvocation 为角色创建同一任务下的独立执行上下文，轨迹保留在父 Invocation 树中。
+// 会限制工具权限、注入系统提示词和用户输入。
 func newRoleInvocation(parentInv *core.Invocation, systemPrompt, userInput string, allowedTools ...string) *core.Invocation {
 	inv := parentInv.NewChild()
 	RestrictTools(inv, allowedTools...)
@@ -31,6 +35,7 @@ func newRoleInvocation(parentInv *core.Invocation, systemPrompt, userInput strin
 }
 
 // runRole 使用调用方的模型和工作区执行角色，不创建 Task 或用户 Session。
+// 内部通过子 Invocation 实现隔离。
 func runRole(runtime *core.Runtime, parentInv *core.Invocation, systemPrompt, userInput string, allowedTools ...string) (string, error) {
 	return runtime.Run(newRoleInvocation(parentInv, systemPrompt, userInput, allowedTools...))
 }

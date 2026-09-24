@@ -46,6 +46,7 @@ const ToolSchema = `
     sub-tasks, each carrying a title and a description.
 `
 
+// quoteAll 将字符串列表中的每个值加上双引号，用于提示词中列举命令名。
 func quoteAll(values []string) []string {
 	quoted := make([]string, 0, len(values))
 	for _, value := range values {

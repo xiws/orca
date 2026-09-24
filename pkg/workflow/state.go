@@ -19,7 +19,7 @@ type StateBuilder struct {
 	workflow *Workflow
 }
 
-// Terminal 标记状态为终态。
+// Terminal 标记状态为终态，终态节点的 Handler 不会被调用
 func (b *StateBuilder) Terminal() *StateBuilder {
 	b.state.Terminal = true
 	return b
@@ -27,6 +27,7 @@ func (b *StateBuilder) Terminal() *StateBuilder {
 
 // Handler 设置状态的业务处理逻辑。
 // Engine.Run 进入该状态时调用 Handler.Handle，返回的 action 决定走哪条 transition。
+// 终态节点的 Handler 可为 nil
 func (b *StateBuilder) Handler(h Handler) *StateBuilder {
 	b.state.Handler = h
 	return b

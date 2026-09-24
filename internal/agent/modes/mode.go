@@ -18,7 +18,9 @@ type Mode interface {
 	Run(task *domain.Task, inv *core.Invocation) (string, error)
 }
 
-// For 按名称构造模式（默认 code）。
+// For 按名称构造对应的交互模式。
+// 支持的名称：ask / code / plan / agent / review / test / terminal / deliberate。
+// 未识别的名称会 panic。
 func For(name string, rt *core.Runtime) Mode {
 	switch name {
 	case "ask":

@@ -1,3 +1,4 @@
+// 验证证据收集：从 Invocation 中提取工具调用记录并校验 bash 执行状态
 package workflow
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/xiws/orca/internal/model"
 )
 
+// recordedCall 记录 Invocation 中的一次工具调用及其结果
 type recordedCall struct {
 	key     string
 	call    model.Call
@@ -19,7 +21,8 @@ type recordedCall struct {
 	results int
 }
 
-// AssistantSequence includes discarded contexts so repeated call IDs stay distinct.
+// invocationCalls 从 Invocation 线程消息中提取所有工具调用记录，
+// AssistantSequence 包含被丢弃的上下文以保持调用 ID 唯一。
 func invocationCalls(inv *domain.Invocation) []recordedCall {
 	var calls []recordedCall
 	pending := map[string]int{}
@@ -41,6 +44,7 @@ func invocationCalls(inv *domain.Invocation) []recordedCall {
 	return calls
 }
 
+// validationRecord 记录单次工具调用的验证证据
 type validationRecord struct {
 	Key        string `json:"key"`
 	CallID     string `json:"call_id"`
@@ -50,6 +54,7 @@ type validationRecord struct {
 	Successful bool   `json:"successful"`
 }
 
+// successfulShell 检查 bash 工具结果是否表示成功执行
 func successfulShell(result string) bool {
 	var data struct {
 		OK       *bool `json:"ok"`
@@ -58,13 +63,15 @@ func successfulShell(result string) bool {
 	return json.Unmarshal([]byte(result), &data) == nil && data.OK != nil && *data.OK && data.ExitCode != nil && *data.ExitCode == 0
 }
 
+// validationEvidence 收集最新 validator 节点的验证证据。
+// 不降级到较早的成功 validator，确保验证的时效性。
 func (w *Runner) validationEvidence(ctx context.Context, run *domain.Run) ([]validationRecord, bool, error) {
 	for i := len(run.Nodes) - 1; i >= 0; i-- {
 		node := run.Nodes[i]
 		if node.Role != "validator" {
 			continue
 		}
-		// Never fall back to an older successful validator.
+		// 不使用较早的成功 validator 降级
 		if node.State != "completed" || node.InvocationID == 0 {
 			return nil, false, nil
 		}
@@ -107,11 +114,14 @@ func (w *Runner) validationEvidence(ctx context.Context, run *domain.Run) ([]val
 	return nil, false, nil
 }
 
+// hasValidation 检查 Run 是否具有有效的验证证据
 func (w *Runner) hasValidation(ctx context.Context, run *domain.Run) (bool, error) {
 	_, valid, err := w.validationEvidence(ctx, run)
 	return valid, err
 }
 
+// validEvidence 检查验证器引用的证据是否合法：每条引用必须匹配已记录的调用，
+// passed 状态必须至少引用一次成功的 bash 执行
 func validEvidence(v agent.Verification, records []validationRecord) bool {
 	ids := map[string]int{}
 	for _, record := range records {

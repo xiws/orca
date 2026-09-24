@@ -52,8 +52,11 @@ type PlanEdge struct {
 // Plan 将 Specification 转换为 WorkflowPlan。
 //
 // Planner 只使用调用方已允许的 read 工具读取项目上下文。
+// 通过子 Invocation 执行独立的 LLM 对话。
 func (p *Planner) Plan(parentInv *core.Invocation, spec *domain.Specification) (*WorkflowPlan, error) {
+	// 将 Specification 格式化为 Planner 可理解的输入
 	userInput := formatSpecificationForPlanner(spec)
+	// 在子 Invocation 中执行 LLM 对话，限制工具为 read
 	output, err := runRole(p.Runtime, parentInv, plannerSystemPrompt, userInput, "read")
 	if err != nil {
 		return nil, fmt.Errorf("planner: %w", err)

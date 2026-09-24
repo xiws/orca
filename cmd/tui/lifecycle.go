@@ -1,3 +1,4 @@
+// Package main 实现 Orca 的交互式终端界面（TUI），基于 Bubble Tea 框架。
 package main
 
 import (
@@ -8,9 +9,9 @@ import (
 	"github.com/xiws/orca/internal/domain"
 )
 
-// Commands can outlive Bubble Tea after a terminal I/O error. Closing this gate
-// prevents commands not yet scheduled from submitting work, and joins commands
-// that already started before the environment is closed.
+// operationGroup 跟踪 Bubble Tea 命令的执行。当终端 I/O 出错时，命令可能比
+// Bubble Tea 存活更久；关闭此 gate 可阻止尚未调度的命令提交工作，并.join 已
+// 启动的命令，之后才关闭环境。
 type operationGroup struct {
 	mu      sync.Mutex
 	wg      sync.WaitGroup
@@ -18,6 +19,7 @@ type operationGroup struct {
 	lastRun domain.RunID
 }
 
+// track 包装一个 tea.Cmd，使其在执行期间被 operationGroup 跟踪；若组已关闭则丢弃。
 func (g *operationGroup) track(cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		g.mu.Lock()
@@ -45,6 +47,7 @@ func (g *operationGroup) track(cmd tea.Cmd) tea.Cmd {
 	}
 }
 
+// finish 关闭 operationGroup，等待所有已启动的命令完成后返回最后一个 run ID。
 func (g *operationGroup) finish() domain.RunID {
 	g.mu.Lock()
 	g.closed = true
@@ -55,6 +58,8 @@ func (g *operationGroup) finish() domain.RunID {
 	return g.lastRun
 }
 
+// stopActiveRun 在 TUI 退出时安全停止活跃的运行；若运行处于 Waiting 且仅等待
+// 人工输入（无子任务运行），则保留等待状态不取消。
 func stopActiveRun(ctx context.Context, s service, id domain.RunID) error {
 	if id == 0 {
 		return nil
@@ -64,6 +69,7 @@ func stopActiveRun(ctx context.Context, s service, id domain.RunID) error {
 		return err
 	}
 	if r == nil || r.State.Terminal() || r.State == domain.Interrupted || r.State == domain.Reconciling {
+		// 已经终结/中断/待核查的运行无需再取消
 		return nil
 	}
 	if r.State == domain.Waiting {
@@ -72,6 +78,7 @@ func stopActiveRun(ctx context.Context, s service, id domain.RunID) error {
 			return err
 		}
 		if len(inputs) > 0 {
+			// 检查是否存在仍在运行的子 run
 			runs, err := s.Runs(ctx)
 			if err != nil {
 				return err
@@ -89,7 +96,7 @@ func stopActiveRun(ctx context.Context, s service, id domain.RunID) error {
 			}
 			if !active {
 				return nil
-			} // Preserve saved human waits on a normal exit.
+			} // 正常退出时保留等待人工输入的状态
 		}
 	}
 	if err := s.Cancel(ctx, id); err != nil {

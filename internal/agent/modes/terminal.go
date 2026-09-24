@@ -11,9 +11,12 @@ type TerminalMode struct {
 	Runtime *core.Runtime
 }
 
+// Name 返回模式名称。
 func (m *TerminalMode) Name() string { return "terminal" }
 
+// Run 终端操作模式执行：限制工具为 bash，专注构建、运行、装依赖等操作。
 func (m *TerminalMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
+	// 限制工具权限，只允许 bash
 	roles.RestrictTools(inv, "bash")
 	executor := &roles.Executor{Runtime: m.Runtime}
 	return executor.Execute(inv)

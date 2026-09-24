@@ -23,11 +23,13 @@ func (t WriteHandler) Handle(cmd command.CommandOption) (error, any) {
 	publish(t.Publisher, event.NewToolBeforeEvent("write", opt.Filename, meta, opt.Reasoning, opt.Id))
 	summary, err := t.write(opt)
 	okStatus := err == nil
+	// After-event 携带摘要作为 meta，失败时 content 为空。
 	publish(t.Publisher, event.NewToolAfterEvent("write", opt.Filename, "", okStatus, summary, 0, opt.Id))
 
 	return nil, ResultFor(opt, summary, err)
 }
 
+// write 将内容写入指定文件，返回写入摘要。
 func (t WriteHandler) write(opt *WriteOption) (string, error) {
 	resolved, err := writeAll(t.Workspace, opt.Filename, opt.Content)
 	if err != nil {

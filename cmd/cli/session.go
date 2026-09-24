@@ -12,14 +12,17 @@ import (
 	"github.com/xiws/orca/internal/domain"
 )
 
+// commandHelp 判断子命令参数是否请求帮助（无参数、help、-h 或 --help）。
 func commandHelp(args []string) bool {
 	return len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help"
 }
 
+// isRemove 判断命令是否为删除类操作（rm/remove/delete）。
 func isRemove(command string) bool {
 	return command == "rm" || command == "remove" || command == "delete"
 }
 
+// handleSession 分发会话子命令：list/show/import/rm。
 func handleSession(ctx context.Context, s service, importer importSession, args []string, out io.Writer) error {
 	if commandHelp(args) {
 		_, err := fmt.Fprint(out, helpText)
@@ -59,6 +62,7 @@ func handleSession(ctx context.Context, s service, importer importSession, args 
 	}
 }
 
+// deleteSessions 根据参数删除指定会话或全部会话，跳过重复 ID。
 func deleteSessions(ctx context.Context, s service, args []string, out io.Writer) error {
 	if err := validateCommand(&CliArgs{SubCommand: "session", SubArgs: append([]string{"rm"}, args...)}); err != nil {
 		return err
@@ -87,6 +91,8 @@ func deleteSessions(ctx context.Context, s service, args []string, out io.Writer
 	return nil
 }
 
+// writeJSON 将值格式化为缩进 JSON 输出，并对控制字符和格式字符做 Unicode 转义，
+// 避免终端显示异常。
 func writeJSON(out io.Writer, value any) error {
 	var encoded bytes.Buffer
 	encoder := json.NewEncoder(&encoded)
@@ -95,6 +101,7 @@ func writeJSON(out io.Writer, value any) error {
 		return err
 	}
 	var safe bytes.Buffer
+	// 转义控制字符和 Unicode 格式字符，防止终端渲染异常
 	for _, r := range encoded.String() {
 		if (unicode.IsControl(r) && r != '\n') || unicode.Is(unicode.Cf, r) {
 			if r > 0xffff {

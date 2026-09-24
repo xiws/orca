@@ -52,6 +52,7 @@ type LegacyTranscript struct {
 	OtterState *llm.OtterState   `json:"otter_state,omitempty"`
 }
 
+// Record 是会话的完整持久化记录，包含会话、任务、执行快照和旧格式归档。
 type Record struct {
 	Session     *domain.Session    `json:"session"`
 	Tasks       []*domain.Task     `json:"tasks"`
@@ -74,6 +75,7 @@ func (r *Record) Capture(inv *core.Invocation) {
 	r.Invocations = append(r.Invocations, snapshot)
 }
 
+// captureInvocation 深复制执行树，生成不可变的快照用于持久化。
 func captureInvocation(inv *core.Invocation) InvocationRecord {
 	snapshot := InvocationRecord{
 		ID: inv.ID, TaskID: inv.TaskID, ProjectPath: inv.ProjectPath,
@@ -146,10 +148,12 @@ type legacyFile struct {
 	OtterState *llm.OtterState   `json:"otter_state,omitempty"`
 }
 
+// getProjectSessionDir 返回项目级会话存储目录。
 func getProjectSessionDir() string {
 	return filepath.Join(utils.GetCurrentPath(), ".orca", sessionsDir)
 }
 
+// getHomeSessionDir 返回用户主目录级会话存储目录。
 func getHomeSessionDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -158,6 +162,7 @@ func getHomeSessionDir() string {
 	return filepath.Join(home, ".orca", sessionsDir)
 }
 
+// sessionPath 根据目录和 ID 构建会话文件的完整路径。
 func sessionPath(dir string, id int64) string {
 	return filepath.Join(dir, strconv.FormatInt(id, 10)+sessionExt)
 }
@@ -228,6 +233,7 @@ func writeTemp(dir string, data []byte) (string, error) {
 	return name, nil
 }
 
+// preserveLegacy 原子地创建旧格式会话的备份文件，已存在时校验内容一致性。
 func preserveLegacy(path string, data []byte) error {
 	checkExisting := func() error {
 		info, err := os.Lstat(path)
@@ -266,6 +272,7 @@ func preserveLegacy(path string, data []byte) error {
 	return nil
 }
 
+// validateRecord 校验会话记录的完整性：ID 正值、路径绝对路径、任务和调用的引用一致性。
 func validateRecord(r *Record) error {
 	if r == nil || r.Session == nil || r.Session.ID <= 0 {
 		return fmt.Errorf("session must have a positive ID")
@@ -339,6 +346,7 @@ func Load(id int64) (*Record, error) {
 	return nil, fmt.Errorf("session %d not found", id)
 }
 
+// loadCurrentRecord 从指定目录加载会话记录，home 目录的旧记录会检查项目目录是否有更新版本。
 func loadCurrentRecord(dir string, id int64) (*Record, error) {
 	r, err := loadFromFile(sessionPath(dir, id))
 	if err != nil {
@@ -367,6 +375,7 @@ func loadCurrentRecord(dir string, id int64) (*Record, error) {
 	return current, nil
 }
 
+// loadFromFile 从文件路径加载并解码会话记录，保留 PathError 供调用方区分不存在与不可读。
 func loadFromFile(path string) (*Record, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -380,6 +389,7 @@ func loadFromFile(path string) (*Record, error) {
 	return r, nil
 }
 
+// decodeRecord 解码会话文件数据，自动检测版本并兼容旧格式；返回记录和是否为旧格式的标记。
 func decodeRecord(data []byte) (*Record, bool, error) {
 	var header struct {
 		Version json.RawMessage `json:"version"`
@@ -499,6 +509,7 @@ func List() []SessionMeta {
 	return metas
 }
 
+// invocationTokens 递归累加执行树中所有调用的 token 消耗。
 func invocationTokens(invocations []InvocationRecord) int {
 	var tokens int
 	for _, inv := range invocations {
@@ -507,6 +518,7 @@ func invocationTokens(invocations []InvocationRecord) int {
 	return tokens
 }
 
+// sessionEntryID 从目录项解析会话 ID，仅接受以 .json 结尾的有效数字文件名。
 func sessionEntryID(entry os.DirEntry) (int64, bool) {
 	if entry.IsDir() || !strings.HasSuffix(entry.Name(), sessionExt) {
 		return 0, false
@@ -536,6 +548,7 @@ func Delete(id int64) error {
 	return nil
 }
 
+// DeleteAll 删除所有会话文件（项目和 home 目录），但不删除旧格式备份。
 func DeleteAll() error {
 	var errs []string
 	for _, dir := range []string{getProjectSessionDir(), getHomeSessionDir()} {
@@ -552,6 +565,7 @@ func DeleteAll() error {
 	return nil
 }
 
+// clearDir 清空目录中所有合法的会话文件，忽略非会话文件。
 func clearDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -571,6 +585,7 @@ func clearDir(dir string) error {
 	return nil
 }
 
+// firstUserMessage 提取首条用户消息作为会话标题，超过 30 字符时截断。
 func firstUserMessage(messages []domain.Message) string {
 	for _, message := range messages {
 		if message.Role == domain.UserMessage && strings.TrimSpace(message.Content) != "" {

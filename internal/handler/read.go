@@ -32,11 +32,13 @@ func (t ReadHandler) Handle(cmd command.CommandOption) (error, any) {
 	publish(t.Publisher, event.NewToolBeforeEvent("read", readOption.Filename, meta, readOption.Reasoning, readOption.Id))
 	content, err := t.read(readOption)
 	okStatus := err == nil
+	// After-event 携带读取到的内容，便于追踪和调试。
 	publish(t.Publisher, event.NewToolAfterEvent("read", readOption.Filename, content, okStatus, meta, 0, readOption.Id))
 
 	return nil, ResultFor(readOption, content, err)
 }
 
+// read 读取文件并按行范围截取，每行添加行号前缀。
 func (t ReadHandler) read(opt *ReadOption) (string, error) {
 	content, err := readAll(t.Workspace, opt.Filename)
 	if err != nil {
@@ -48,6 +50,7 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 		return "(empty file)", nil
 	}
 
+	// 将 0 或负数范围视为开放范围，默认读取整个文件。
 	start, end := opt.Start, opt.End
 	if start <= 0 {
 		start = 1
@@ -64,6 +67,7 @@ func (t ReadHandler) read(opt *ReadOption) (string, error) {
 		return "", fmt.Errorf("start line %d is after end line %d", start, end)
 	}
 
+	// 超过 MaxReadLines 行时截断，并提示调用方如何继续读取。
 	var truncated string
 	if end-start+1 > MaxReadLines {
 		last := start + MaxReadLines - 1

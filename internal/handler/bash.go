@@ -37,7 +37,7 @@ func (t BashHandler) Handle(cmd command.CommandOption) (error, any) {
 		return fmt.Errorf("%w: %T is not a %s option", ErrUnsupportedOption, cmd, CommandBash), nil
 	}
 
-	// 发布 before-event，命令本身作为 meta。
+	// 发布 before-event，命令本身作为 meta 供 UI 显示。
 	publish(t.Publisher, event.NewToolBeforeEvent("bash", "", opt.Content, opt.Reasoning, opt.Id))
 
 	output, exitCode, err := t.run(opt)
@@ -48,6 +48,8 @@ func (t BashHandler) Handle(cmd command.CommandOption) (error, any) {
 	return nil, ResultFor(opt, output, err)
 }
 
+// run 执行 bash 命令，返回输出、退出码和可能的错误。
+// 空命令返回 ErrEmptyCommand；危险命令被 validateCommand 拦截。
 func (t BashHandler) run(opt *BashOption) (string, int, error) {
 	if strings.TrimSpace(opt.Content) == "" {
 		return "", 0, ErrEmptyCommand
@@ -73,6 +75,7 @@ func (t BashHandler) run(opt *BashOption) (string, int, error) {
 
 	cmd := exec.CommandContext(ctx, shell, shellArgs...)
 	cmd.Dir = dir
+	// 将 shell 放入独立进程组，超时时可一次性杀死整棵进程树。
 	cmd.SysProcAttr = groupAttr()
 	cmd.Cancel = func() error { return killGroup(cmd) }
 	cmd.WaitDelay = killGrace
@@ -83,10 +86,12 @@ func (t BashHandler) run(opt *BashOption) (string, int, error) {
 	runErr := cmd.Run()
 
 	report := out.String()
+	// 若输出被截断，追加提示信息让模型知道有更多内容。
 	if out.dropped > 0 {
 		report = fmt.Sprintf("%s\n... %d more bytes of output omitted", report, out.dropped)
 	}
 
+	// 区分超时、非零退出和启动失败三种情况。
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return report, -1, fmt.Errorf("timed out after %d seconds", timeout)
 	}
@@ -129,6 +134,7 @@ type cappedWriter struct {
 	dropped int
 }
 
+// Write 将字节写入缓冲区，超出 limit 的部分计入 dropped 而不写入。
 func (c *cappedWriter) Write(p []byte) (int, error) {
 	remaining := c.limit - c.buf.Len()
 	if len(p) > remaining {
@@ -142,4 +148,5 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// String 返回已收集的缓冲内容。
 func (c *cappedWriter) String() string { return c.buf.String() }

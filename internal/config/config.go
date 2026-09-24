@@ -1,4 +1,5 @@
-// Package config loads explicit workspace configuration without package-init IO.
+// Package config 加载工作空间配置，支持多层配置合并（全局 ~/.orca/ 和项目 .orca/）。
+// 不包含包级别的 init IO 操作。
 package config
 
 import (
@@ -16,17 +17,22 @@ import (
 	"github.com/xiws/orca/internal/providers"
 )
 
+// settings 从 setting.json/settings.json 加载的全局设置。
 type settings struct {
 	DefaultProvider string  `json:"defaultProvider"`
 	DefaultModel    string  `json:"defaultModel"`
 	SystemPrompt    *string `json:"systemPrompt"`
 }
+
+// fileModel 配置文件中单个模型的声明。
 type fileModel struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	ContextWindow int    `json:"contextWindow"`
 	SupportsTools bool   `json:"supportsTools"`
 }
+
+// fileProvider 配置文件中的提供方声明，包含 API 类型、地址、密钥和模型列表。
 type fileProvider struct {
 	Name    string      `json:"name"`
 	API     string      `json:"api"`
@@ -35,19 +41,19 @@ type fileProvider struct {
 	Models  []fileModel `json:"models"`
 }
 
-// All loaded data is private and JSON serialization yields {}. There is no
-// save API: legacy literal credentials are read-only, and ${VAR} references
-// are expanded only for Resolve, not cached or persisted.
+// Config 聚合加载后的完整配置。所有数据均为私有，JSON 序列化结果恒为 {}。
+// 没有保存接口：遗留凭证只读，${VAR} 引用仅在 Resolve 时展开，不缓存也不持久化。
 type Config struct {
-	workspace     string
-	settings      settings
-	providers     map[string]fileProvider
-	prompts       map[model.Ref]string
-	defaultPrompt string
+	workspace     string                  // 工作空间路径
+	settings      settings                // 全局设置
+	providers     map[string]fileProvider // 提供方配置
+	prompts       map[model.Ref]string    // 按模型索引的系统提示词
+	defaultPrompt string                  // 默认系统提示词
 }
 
 var _ providers.SecretResolver = (*Config)(nil)
 
+// Load 从全局和项目配置目录加载并合并配置。
 func Load(workspace string) (*Config, error) {
 	if strings.TrimSpace(workspace) == "" {
 		return nil, errors.New("config: explicit workspace required")
@@ -68,6 +74,7 @@ func Load(workspace string) (*Config, error) {
 		return nil, fmt.Errorf("config: home directory: %w", err)
 	}
 	cfg := &Config{workspace: root, providers: map[string]fileProvider{}, prompts: map[model.Ref]string{}}
+	// 配置目录优先级：全局 ~/.orca/ 然后项目 .orca/。
 	dirs := []string{filepath.Join(home, ".orca")}
 	local := filepath.Join(root, ".orca")
 	if local != dirs[0] {
@@ -76,11 +83,13 @@ func Load(workspace string) (*Config, error) {
 	systemPrompt := "You are a helpful coding assistant.\nProject Path: {{.ProjectPath}}\nModel context length: {{.ContextLength}} tokens."
 	otterPrompt := systemPrompt
 	for _, dir := range dirs {
+		// 加载设置文件（setting.json 和 settings.json）。
 		for _, name := range []string{"setting.json", "settings.json"} {
 			if _, err := readJSON(filepath.Join(dir, name), &cfg.settings); err != nil {
 				return nil, err
 			}
 		}
+		// 加载模型提供方配置。
 		var file struct {
 			Providers map[string]json.RawMessage `json:"providers"`
 		}
@@ -92,10 +101,9 @@ func Load(workspace string) (*Config, error) {
 				return nil, errors.New("config: invalid provider entry")
 			}
 			previous := cfg.providers[name]
-			// Unmarshal an overlay into the previous value so absent fields inherit.
-			// Merge model entries by ID as well; explicit false/zero override defaults.
+			// 合并叠加配置：缺失字段继承已有值，模型按 ID 合并。
 			overlay := previous
-			overlay.Models = nil // decoding must not reuse the inherited slice storage
+			overlay.Models = nil // 解码时必须复用已有模型切片
 			if err := json.Unmarshal(raw, &overlay); err != nil {
 				return nil, errors.New("config: invalid provider configuration")
 			}
@@ -116,6 +124,7 @@ func Load(workspace string) (*Config, error) {
 						return nil, errors.New("config: invalid or duplicate model ID")
 					}
 					seen[identity.ID] = true
+					// 按 ID 查找已有模型配置进行合并。
 					index := -1
 					var target fileModel
 					for i, existing := range overlay.Models {
@@ -137,6 +146,7 @@ func Load(workspace string) (*Config, error) {
 			}
 			cfg.providers[name] = overlay
 		}
+		// 加载系统提示词模板。
 		if content, found, err := readPrompt(filepath.Join(dir, "system_prompt.md")); err != nil {
 			return nil, err
 		} else if found {
@@ -149,10 +159,12 @@ func Load(workspace string) (*Config, error) {
 			otterPrompt = content
 		}
 	}
+	// settings 中的 systemPrompt 优先级最高。
 	if cfg.settings.SystemPrompt != nil {
 		systemPrompt = *cfg.settings.SystemPrompt
 		otterPrompt = systemPrompt
 	}
+	// 渲染提示词模板。
 	render := func(source string, window int) (string, error) {
 		tmpl, err := template.New("system").Option("missingkey=error").Parse(source)
 		if err != nil {
@@ -174,6 +186,7 @@ func Load(workspace string) (*Config, error) {
 	if _, err := render(otterPrompt, 0); err != nil {
 		return nil, err
 	}
+	// 为每个提供方的每个模型预渲染系统提示词。
 	for providerName, provider := range cfg.providers {
 		if provider.API == "" {
 			return nil, errors.New("config: provider API missing")
@@ -193,6 +206,7 @@ func Load(workspace string) (*Config, error) {
 	return cfg, nil
 }
 
+// readJSON 读取并校验 JSON 文件，文件不存在时返回 false。
 func readJSON(path string, dst any) (bool, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -206,6 +220,8 @@ func readJSON(path string, dst any) (bool, error) {
 	}
 	return true, nil
 }
+
+// readPrompt 读取提示词文件，文件不存在时返回 false。
 func readPrompt(path string) (string, bool, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -217,12 +233,15 @@ func readPrompt(path string) (string, bool, error) {
 	return string(data), true, nil
 }
 
+// DefaultModel 返回配置的默认模型引用。
 func (c *Config) DefaultModel() model.Ref {
 	if c == nil {
 		return model.Ref{}
 	}
 	return model.Ref{Provider: c.settings.DefaultProvider, Model: c.settings.DefaultModel}
 }
+
+// SystemPrompt 返回指定模型对应的系统提示词，未找到则返回默认提示词。
 func (c *Config) SystemPrompt(ref model.Ref) string {
 	if c == nil {
 		return ""
@@ -233,8 +252,10 @@ func (c *Config) SystemPrompt(ref model.Ref) string {
 	return c.defaultPrompt
 }
 
+// envReference 匹配 ${VAR_NAME} 形式的环境变量引用。
 var envReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
+// Resolve 解析指定模型的连接信息，展开 API Key 中的环境变量引用。
 func (c *Config) Resolve(ctx context.Context, ref model.Ref) (providers.Connection, error) {
 	if err := ctx.Err(); err != nil {
 		return providers.Connection{}, err
@@ -246,6 +267,7 @@ func (c *Config) Resolve(ctx context.Context, ref model.Ref) (providers.Connecti
 	if !ok {
 		return providers.Connection{}, errors.New("config: unknown provider")
 	}
+	// 查找指定模型。
 	var found *fileModel
 	for i := range p.Models {
 		if p.Models[i].ID == ref.Model {
@@ -256,6 +278,7 @@ func (c *Config) Resolve(ctx context.Context, ref model.Ref) (providers.Connecti
 	if found == nil {
 		return providers.Connection{}, errors.New("config: unknown model for provider")
 	}
+	// 展开 API Key 中的 ${VAR} 引用。
 	var envErr error
 	key := envReference.ReplaceAllStringFunc(p.APIKey, func(ref string) string {
 		name := ref[2 : len(ref)-1]
@@ -265,7 +288,7 @@ func (c *Config) Resolve(ctx context.Context, ref model.Ref) (providers.Connecti
 		}
 		return value
 	})
-	// Check the reference syntax, not the expanded secret (which may contain $).
+	// 检查引用语法，而非展开后的密钥值（可能包含 $）。
 	if strings.Contains(envReference.ReplaceAllString(p.APIKey, ""), "${") {
 		envErr = errors.New("config: malformed API key environment reference")
 	}
