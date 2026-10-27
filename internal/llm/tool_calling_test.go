@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/xiws/orca/internal/handler"
 )
 
 // TestToolsMarshalToOpenAIShape 检查 Tools() 序列化为 OpenAI /chat/completions
@@ -35,7 +37,7 @@ func TestToolsMarshalToOpenAIShape(t *testing.T) {
 		t.Fatalf("len(Tools) = %d, want 5", len(envelope.Tools))
 	}
 
-	wantNames := []string{ToolRead, ToolWrite, ToolEdit, ToolBash, ToolCreateTask}
+	wantNames := []string{handler.CommandRead, handler.CommandWrite, handler.CommandEdit, handler.CommandBash, handler.CommandCreateTask}
 	for i, tool := range envelope.Tools {
 		if tool.Type != "function" {
 			t.Errorf("tool %d type = %q, want %q", i, tool.Type, "function")
@@ -57,11 +59,11 @@ func TestToolsMarshalToOpenAIShape(t *testing.T) {
 // 预期形式在此处明确写出，而不是从 handler 包派生，以避免 llm 依赖它。
 func TestToolParametersMatchHandlerProtocol(t *testing.T) {
 	want := map[string][]string{
-		ToolRead:       {"filename", "start", "end"},
-		ToolWrite:      {"filename", "content"},
-		ToolEdit:       {"filename", "contents"},
-		ToolBash:       {"content", "workdir", "timeout"},
-		ToolCreateTask: {"task_target"},
+		handler.CommandRead:       {"filename", "start", "end"},
+		handler.CommandWrite:      {"filename", "content"},
+		handler.CommandEdit:       {"filename", "contents"},
+		handler.CommandBash:       {"content", "workdir", "timeout"},
+		handler.CommandCreateTask: {"task_target"},
 	}
 	for _, tool := range Tools() {
 		properties, err := json.Marshal(tool.Function.Parameters.Properties)

@@ -1,5 +1,7 @@
 package llm
 
+import "github.com/xiws/orca/internal/handler"
+
 // 本文件将 internal/handler 实现的 read、write、edit 和 bash 命令
 // 镜像为 OpenAI 函数调用的工具定义，使支持工具的模型可以原生调用它们，
 // 而不必通过 handler.ToolPrompt 描述的自由格式 JSON 协议。
@@ -9,15 +11,6 @@ package llm
 
 // ToolType 是 OpenAI chat completions 协议中 "tools" 数组目前唯一接受的分隔符值。
 const ToolType = "function"
-
-// 内置工具名称，与 handler.CommandRead/Write/Edit/Bash/CreateTask 对应。
-const (
-	ToolRead       = "read"
-	ToolWrite      = "write"
-	ToolEdit       = "edit"
-	ToolBash       = "bash"
-	ToolCreateTask = "create_task"
-)
 
 // Tool 是 chat completion 请求中 "tools" 数组的单个条目，
 // 采用 OpenAI 函数调用规范描述的形式。
@@ -81,7 +74,7 @@ func NewTool(name, description string, parameters ToolSchema) Tool {
 // ReadTool 描述 read 命令：返回文件的基于 1 的行范围（包含两端），
 // 省略 start 和 end 时默认读取整个文件，并限制单次调用返回的最大行数。
 func ReadTool() Tool {
-	return NewTool(ToolRead,
+	return NewTool(handler.CommandRead,
 		"Read a file from the workspace and return it with 1 based line numbers. Omit start and end to read the whole file.",
 		ObjectProperty("", map[string]ToolSchema{
 			"filename": StringProperty("Absolute or workspace-relative path of the file to read"),
@@ -93,7 +86,7 @@ func ReadTool() Tool {
 // WriteTool 描述 write 命令：从头重建文件，创建缺失的父目录，
 // 因此编辑已有文件应优先使用 edit 工具。
 func WriteTool() Tool {
-	return NewTool(ToolWrite,
+	return NewTool(handler.CommandWrite,
 		"Create or overwrite a file with the given content, creating missing parent directories. Everything not present in content is lost; prefer edit for files that already exist.",
 		ObjectProperty("", map[string]ToolSchema{
 			"filename": StringProperty("Absolute or workspace-relative path of the file to write"),
@@ -107,7 +100,7 @@ func EditTool() Tool {
 	fragment := ObjectProperty("A single replacement to apply to the file", map[string]ToolSchema{
 		"diff": StringProperty("Unified diff to apply; line numbers are ignored, matching is content-based and tolerates model imprecision via hunkpatch's fuzzy algorithm"),
 	})
-	return NewTool(ToolEdit,
+	return NewTool(handler.CommandEdit,
 		"Apply one or more replacements to an existing file. Fragments are applied in order and the file is only written when every one of them matches.",
 		ObjectProperty("", map[string]ToolSchema{
 			"filename": StringProperty("Absolute or workspace-relative path of the file to edit"),
@@ -118,7 +111,7 @@ func EditTool() Tool {
 // BashTool 描述 bash 命令：在 shell 中运行命令行，
 // 可选指定工作目录和自定义超时，返回合并的 stdout 和 stderr。
 func BashTool() Tool {
-	return NewTool(ToolBash,
+	return NewTool(handler.CommandBash,
 		"Run a command line in a shell and return stdout and stderr merged. The command is killed and reported as failed once timeout elapses.",
 		ObjectProperty("", map[string]ToolSchema{
 			"content": StringProperty("The command line to run"),
@@ -134,7 +127,7 @@ func CreateTaskTool() Tool {
 		"title":       StringProperty("Short title of the sub-task"),
 		"description": StringProperty("What the sub-task must achieve, in enough detail to act on"),
 	}, "title", "description")
-	return NewTool(ToolCreateTask,
+	return NewTool(handler.CommandCreateTask,
 		"Decompose a high-level goal into multiple sub-tasks, run each sub-task independently, and aggregate the results. Use this when the user's request is complex and can be broken into parallel work streams.",
 		ObjectProperty("", map[string]ToolSchema{
 			"task_target": ArrayProperty("Sub-tasks to create and run", subTask),

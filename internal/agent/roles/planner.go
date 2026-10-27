@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Planner 是规划 Agent。
@@ -51,24 +51,22 @@ type PlanEdge struct {
 
 // Plan 将 Specification 转换为 WorkflowPlan。
 //
-// Planner 是只读 Agent：只给 read 工具，可以读取项目文件了解上下文。
-func (p *Planner) Plan(spec *core.Specification) (*WorkflowPlan, error) {
-	plannerTask := core.NewTask("create workflow plan", "plan")
-	plannerTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: plannerSystemPrompt},
-		{Role: llm.RoleUser, Content: formatSpecificationForPlanner(spec)},
-	}
-
-	err, result := p.Runtime.RunTask(plannerTask)
+// Planner 只使用调用方已允许的 read 工具读取项目上下文。
+// 通过子 Invocation 执行独立的 LLM 对话。
+func (p *Planner) Plan(parentInv *core.Invocation, spec *domain.Specification) (*WorkflowPlan, error) {
+	// 将 Specification 格式化为 Planner 可理解的输入
+	userInput := formatSpecificationForPlanner(spec)
+	// 在子 Invocation 中执行 LLM 对话，限制工具为 read
+	output, err := runRole(p.Runtime, parentInv, plannerSystemPrompt, userInput, "read")
 	if err != nil {
 		return nil, fmt.Errorf("planner: %w", err)
 	}
 
-	return parseWorkflowPlan(result)
+	return parseWorkflowPlan(output)
 }
 
 // formatSpecificationForPlanner 将 Specification 格式化为 Planner 的输入。
-func formatSpecificationForPlanner(spec *core.Specification) string {
+func formatSpecificationForPlanner(spec *domain.Specification) string {
 	if spec == nil {
 		return "请为任务创建执行计划。"
 	}

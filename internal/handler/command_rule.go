@@ -6,12 +6,15 @@ import (
 	"strings"
 )
 
+// commandRule 定义一条命令拦截规则：name 标识规则，pattern 匹配命令行，reason 说明拦截原因。
 type commandRule struct {
 	name    string
 	pattern *regexp.Regexp
 	reason  string
 }
 
+// blockedCommandRules 列出所有禁止执行的命令模式，涵盖危险删除、格式化磁盘、
+// 关机重启、fork bomb 等高风险操作。
 var blockedCommandRules = []commandRule{
 	{
 		name:    "recursive-force-rm",
@@ -50,6 +53,7 @@ var blockedCommandRules = []commandRule{
 	},
 }
 
+// validateCommand 检查命令行是否匹配任何拦截规则，匹配则返回错误。
 func validateCommand(line string) error {
 	line = strings.TrimSpace(line)
 	if line == "" {

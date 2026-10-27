@@ -3,42 +3,29 @@ package modes
 import (
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/roles"
+	"github.com/xiws/orca/internal/assets"
+	"github.com/xiws/orca/internal/domain"
 	"github.com/xiws/orca/internal/llm"
 )
 
-// ReviewMode 只读评审模式：只关注代码质量、潜在 bug、安全性、性能。
-// 不修改任何文件，工具只给 read + bash（bash 仅运行验证命令）。
+// ReviewMode 代码评审模式：关注代码质量、潜在 bug、安全性、性能。
+// 保留 read + bash 验证工具语义；bash 并非只读工具，权限不得超过调用方。
 type ReviewMode struct {
 	Runtime *core.Runtime
 }
 
+// Name 返回模式名称。
 func (m *ReviewMode) Name() string { return "review" }
 
-func (m *ReviewMode) Run(task *core.Task) (string, error) {
-	// 注入评审系统提示词
-	if task.SessionInfo == nil {
-		task.SessionInfo = core.NewSession()
-	}
-	task.SessionInfo.Messages = append([]llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: reviewSystemPrompt},
-	}, task.SessionInfo.Messages...)
+// Run 评审模式执行：注入评审系统提示词，限制工具为 read + bash，然后执行。
+func (m *ReviewMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
+	// 在消息历史最前面插入评审系统提示词
+	inv.Messages = append([]llm.ChatMessage{
+		{Role: llm.RoleSystem, Content: assets.ReviewPrompt},
+	}, inv.Messages...)
 
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"read", "bash"}}
-	return executor.Execute(task)
+	// 限制工具为 read 和 bash（bash 用于运行验证命令）
+	roles.RestrictTools(inv, "read", "bash")
+	executor := &roles.Executor{Runtime: m.Runtime}
+	return executor.Execute(inv)
 }
-
-// reviewSystemPrompt 代码评审系统提示词：质量、bug、安全、性能四维度。
-const reviewSystemPrompt = `你是一位资深代码评审专家。请从以下四个维度对代码进行评审：
-
-1. **代码质量**：命名规范、可读性、结构清晰度、是否符合项目约定
-2. **潜在 Bug**：逻辑错误、边界条件、空指针、资源泄漏、并发安全
-3. **安全性**：注入风险、敏感信息暴露、权限校验、输入验证
-4. **性能**：不必要的分配、低效算法、N+1 查询、锁竞争
-
-评审规则：
-- 使用 read 工具读取相关代码文件
-- 使用 bash 工具运行编译、测试等验证命令佐证结论
-- 不要修改任何文件
-- 按 critical / warning / info 三级分类问题
-- 每个问题给出具体文件、行号和修复建议
-- 最后给出总体评价和总结`

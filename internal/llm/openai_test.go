@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/xiws/orca/internal/handler"
 )
 
 // TestEndpointTrimsTrailingSlash 固定客户端会 POST 到的 URL：
@@ -130,7 +132,7 @@ func TestWireMessageDropsEmptyMessages(t *testing.T) {
 	}
 
 	// 内容为空但携带工具调用的助手轮次被保留。
-	var assistants = ChatMessage{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call-1", Name: ToolRead}}}
+	var assistants = ChatMessage{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call-1", Name: handler.CommandRead}}}
 	if msg, ok := wireMessage(assistants); !ok || len(msg.ToolCalls) != 1 || msg.ToolCallID != "" {
 		t.Errorf("wireMessage(tool assistant) = (%+v, %v), want a kept message with one tool call", msg, ok)
 	}
@@ -144,7 +146,7 @@ func TestWireMessageTranslatesToolCalls(t *testing.T) {
 		Content:    "please",
 		ToolCallID: "call-2",
 		ToolCalls: []ToolCall{
-			{ID: "call-1", Name: ToolRead, Arguments: `{"filename":"a.md"}`},
+			{ID: "call-1", Name: handler.CommandRead, Arguments: `{"filename":"a.md"}`},
 		},
 	})
 	if !ok {
@@ -157,7 +159,7 @@ func TestWireMessageTranslatesToolCalls(t *testing.T) {
 		t.Fatalf("tool calls = %d, want 1", len(message.ToolCalls))
 	}
 	tc := message.ToolCalls[0]
-	if tc.ID != "call-1" || tc.Type != ToolType || tc.Function.Name != ToolRead || tc.Function.Arguments != `{"filename":"a.md"}` {
+	if tc.ID != "call-1" || tc.Type != ToolType || tc.Function.Name != handler.CommandRead || tc.Function.Arguments != `{"filename":"a.md"}` {
 		t.Errorf("tool call = %+v, want the read call in OpenAI shape", tc)
 	}
 }

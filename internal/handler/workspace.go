@@ -39,11 +39,12 @@ func (t Workspace) Resolve(name string) (string, error) {
 	}
 	path = filepath.Clean(path)
 
+	// 解析符号链接后验证路径仍在工作区内，防止通过 ".." 或符号链接逃逸。
 	canonical, err := canonicalPath(path)
 	if err != nil {
 		return "", err
 	}
-	// Root 本身可能位于符号链接后面，如 macOS 上的 /tmp，
+	// Root 本身可能位于符号链接后面（如 macOS 上的 /tmp），
 	// 因此两边在比较前都必须规范化。
 	canonicalRoot, err := canonicalPath(root)
 	if err != nil {

@@ -1,3 +1,4 @@
+// Package tool 提供进程级配置和设置管理。
 package tool
 
 import (
@@ -11,8 +12,8 @@ type Settings struct {
 	Debug           string `json:"debug"`
 }
 
-// settings 是进程级配置，支撑 Get 和 Set。
-var settings Settings = LoadSettings()
+// settings 是进程级配置，支撑 Get 和 Set。导入包时不读取配置；加载由调用方显式负责。
+var settings Settings
 
 // 已知设置的名称，与 JSON 字段名匹配。
 const (

@@ -1,5 +1,8 @@
 # Event Display 改造 Spec
 
+> **状态：历史实现** ｜ 针对旧 `ToolBeforeEvent` / `ToolAfterEvent` 渲染链路的改造 spec；
+> 当前渲染见 `cmd/cli/stream.go`。
+
 ## 1. 现状与问题
 
 ### 1.1 当前链路

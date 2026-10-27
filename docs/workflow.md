@@ -1,5 +1,8 @@
 # Workflow
 
+> **状态：设计稿** ｜ Agent 驱动状态机的设想（`pkg/workflow` 当前零引用）；
+> 当前编排见 `internal/workflow/runner.go`。
+
 Agent 驱动的状态机流程引擎。
 
 ## 核心思想

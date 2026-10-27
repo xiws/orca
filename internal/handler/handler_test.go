@@ -28,7 +28,7 @@ func newWorkspace(t *testing.T) (Workspace, *command.CommandHandle) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 
-	if err := bus.Subscribe(event2.TaskComplateEvent{}, event2.TaskComplateEventHandler{}); err != nil {
+	if err := bus.Subscribe(event2.TaskCompleteEvent{}, event2.TaskCompleteEventHandler{}); err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 

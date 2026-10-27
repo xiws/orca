@@ -1,17 +1,6 @@
 // Package llm 提供对大语言模型的访问，将流式模型输出转换为结构化的 Go 结果。
 package llm
 
-// PromptContext 携带单次模型请求的完整提示。
-// 它由系统提示、用户角色提示和工具提示组成。
-type PromptContext struct {
-	// SystemPrompt 是引导模型行为的高层指令。
-	SystemPrompt string
-	// UserPrompt 是本轮的实际用户请求。
-	UserPrompt string
-	// ToolPrompt 描述可用工具及其预期用法。
-	ToolPrompt string
-}
-
 // ToolCall 是模型产生的单个函数/工具调用。
 // json 标签与 OpenAI 在助手消息中使用的线路形式匹配，
 // 因此记录的轮次可以在下一次请求中原样回放给模型。

@@ -3,7 +3,7 @@ BINARY=orca
 
 .PHONY: run
 run:
-	go run ./cmd/cli  "生成一个单元测试文件,为./internal/llm/openai.go文件"
+	go run ./cmd/cli --help
 
 .PHONY:build
 build:
@@ -16,6 +16,22 @@ build-tui:
 .PHONY: run-tui
 run-tui:
 	go run ./cmd/tui
+
+.PHONY: test test-race vet bench test-live
+test:
+	go test ./...
+
+test-race:
+	go test -race ./...
+
+vet:
+	go vet ./...
+
+bench:
+	go test -run '^$$' -bench . -benchmem ./internal/store ./internal/app
+
+test-live:
+	go test -tags live -run '^TestRequester' ./internal/llm
 
 .PHONY: publish
 publish: build

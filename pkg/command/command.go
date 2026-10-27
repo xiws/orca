@@ -8,11 +8,16 @@ import (
 )
 
 var (
-	ErrNilCommandOption  = errors.New("command option is nil")
+	// ErrNilCommandOption 命令选项为 nil
+	ErrNilCommandOption = errors.New("command option is nil")
+	// ErrNilCommandHandler 命令处理器为 nil
 	ErrNilCommandHandler = errors.New("command handler is nil")
-	ErrNilCommandParam   = errors.New("command parameter is nil")
-	ErrDuplicateCommand  = errors.New("command name is already registered")
-	ErrCommandNotFound   = errors.New("command name is not registered")
+	// ErrNilCommandParam 命令参数为 nil
+	ErrNilCommandParam = errors.New("command parameter is nil")
+	// ErrDuplicateCommand 命令名称已被注册
+	ErrDuplicateCommand = errors.New("command name is already registered")
+	// ErrCommandNotFound 命令名称未注册
+	ErrCommandNotFound = errors.New("command name is not registered")
 )
 
 // CommandOption 描述命令的注册和执行参数。
@@ -81,6 +86,7 @@ func (t *CommandHandle) Execute(cmd CommandOption) (error, any) {
 	return handler.Handle(cmd)
 }
 
+// isNil 检查值是否为 nil，支持各种引用类型
 func isNil(value any) bool {
 	if value == nil {
 		return true

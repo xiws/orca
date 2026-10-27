@@ -7,14 +7,20 @@ import (
 	"sync"
 )
 
+// QueueCapacity 事件队列的默认容量
 const QueueCapacity = 100
 
 var (
-	ErrNilEvent              = errors.New("event is nil")
-	ErrNilEventHandler       = errors.New("event handler is nil")
+	// ErrNilEvent 事件为 nil
+	ErrNilEvent = errors.New("event is nil")
+	// ErrNilEventHandler 事件处理器为 nil
+	ErrNilEventHandler = errors.New("event handler is nil")
+	// ErrDuplicateSubscription 事件处理器已被订阅
 	ErrDuplicateSubscription = errors.New("event handler is already subscribed")
-	ErrNoSubscribers         = errors.New("event has no subscribers")
-	ErrEventBusClosed        = errors.New("event bus is closed")
+	// ErrNoSubscribers 事件没有订阅者
+	ErrNoSubscribers = errors.New("event has no subscribers")
+	// ErrEventBusClosed 事件总线已关闭
+	ErrEventBusClosed = errors.New("event bus is closed")
 )
 
 // Event 标识一个事件及其订阅主题。
@@ -116,6 +122,7 @@ func (t *EventBus) Close() error {
 	return nil
 }
 
+// consume 消费事件队列，持续处理直到总线关闭
 func (t *EventBus) consume() {
 	defer t.worker.Done()
 	for {
@@ -135,8 +142,10 @@ func (t *EventBus) consume() {
 	}
 }
 
+// dispatch 分发事件到所有订阅该事件的处理器
 func (t *EventBus) dispatch(ent Event) {
 	t.mu.RLock()
+	// 复制处理器切片，避免在锁内调用 handler
 	handlers := append([]EventHandler(nil), t.subscribers[ent.GetName()]...)
 	t.mu.RUnlock()
 	for _, handler := range handlers {
@@ -144,6 +153,7 @@ func (t *EventBus) dispatch(ent Event) {
 	}
 }
 
+// invoke 安全调用处理器，捕获 panic 防止崩溃
 func invoke(handler EventHandler, ent Event) {
 	defer func() {
 		_ = recover()
@@ -151,6 +161,7 @@ func invoke(handler EventHandler, ent Event) {
 	handler.Handle(ent)
 }
 
+// sameHandler 判断两个处理器是否相同
 func sameHandler(left, right EventHandler) bool {
 	leftValue := reflect.ValueOf(left)
 	rightValue := reflect.ValueOf(right)
@@ -160,6 +171,7 @@ func sameHandler(left, right EventHandler) bool {
 	return leftValue.Interface() == rightValue.Interface()
 }
 
+// isNil 检查值是否为 nil，支持各种引用类型
 func isNil(value any) bool {
 	if value == nil {
 		return true

@@ -2,9 +2,12 @@ package modes
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/xiws/orca/internal/agent/core"
 	"github.com/xiws/orca/internal/agent/roles"
+	"github.com/xiws/orca/internal/assets"
+	"github.com/xiws/orca/internal/domain"
 	"github.com/xiws/orca/internal/llm"
 )
 
@@ -14,71 +17,53 @@ type DeliberateMode struct {
 	Runtime *core.Runtime
 }
 
+// Name 返回模式名称。
 func (m *DeliberateMode) Name() string { return "deliberate" }
 
-func (m *DeliberateMode) Run(task *core.Task) (string, error) {
-	// 1. Responder：生成初始回答
-	answer, err := m.respond(task)
+// Run 多角色辩论模式执行流程：
+// 1. Responder 生成初始回答
+// 2. 多个 Critic 从不同视角点评
+// 3. Judge 汇总所有观点，输出最终答案
+func (m *DeliberateMode) Run(task *domain.Task, inv *core.Invocation) (string, error) {
+	// 第一步：Responder 生成初始回答
+	answer, err := m.respond(inv)
 	if err != nil {
 		return "", fmt.Errorf("deliberate respond: %w", err)
 	}
 
-	// 2. Critics：多视角点评（含 Devil's Advocate）
-	opinions := m.critics(task, answer)
+	// 第二步：多视角点评（含 Devil's Advocate）
+	opinions := m.critics(inv, task.Input, answer)
 
-	// 3. Judge：汇总所有观点，输出最终答案
+	// 第三步：Judge 汇总所有观点，输出最终答案
 	judge := &roles.Judge{Runtime: m.Runtime}
-	return judge.Synthesize(task.Input, answer, opinions)
+	return judge.Synthesize(inv, task.Input, answer, opinions)
 }
 
-// respond 使用 Executor 生成初始回答（只读，工具只给 read）。
-func (m *DeliberateMode) respond(task *core.Task) (string, error) {
-	executor := &roles.Executor{Runtime: m.Runtime, Tools: []string{"read"}}
-	return executor.Execute(task)
+// respond 使用 Executor 生成初始回答，仅使用调用方已允许的 read 工具。
+func (m *DeliberateMode) respond(inv *core.Invocation) (string, error) {
+	roles.RestrictTools(inv, "read")
+	executor := &roles.Executor{Runtime: m.Runtime}
+	return executor.Execute(inv)
 }
 
 // critics 从多个视角对初始回答进行点评。
 // 返回各 Critic 的点评文本列表。
-func (m *DeliberateMode) critics(task *core.Task, answer string) []string {
+func (m *DeliberateMode) critics(parentInv *core.Invocation, input, answer string) []string {
+	// 从嵌入的 prompt 资源文件中按分隔符解析各视角的提示词
+	sections := strings.Split(assets.DeliberatePrompt, "\n---\n")
 	prompts := []struct {
 		name   string
 		prompt string
 	}{
-		{
-			name: "架构视角",
-			prompt: `你是一位软件架构专家。请从架构设计角度点评以下回答：
-- 设计方案是否合理？
-- 是否符合常见架构模式？
-- 有没有更好的架构选择？
-- 可扩展性和可维护性如何？
-
-请直接给出你的分析和意见。`,
-		},
-		{
-			name: "边界与正确性视角",
-			prompt: `你是一位注重细节的工程师。请从边界条件和正确性角度点评以下回答：
-- 是否考虑了边界情况？
-- 逻辑是否严密？有无遗漏？
-- 错误处理是否充分？
-- 是否有隐含假设可能导致问题？
-
-请直接给出你的分析和意见。`,
-		},
-		{
-			name: "Devil's Advocate（魔鬼代言人）",
-			prompt: `你是 Devil's Advocate，专门挑刺的批评者。你的职责是：
-- 找出回答中的每一个弱点
-- 给出至少一个反例或风险场景
-- 质疑每一个假设
-- 提出最坏情况
-
-你必须找出至少一个问题。不要客气，不要说"总体来说不错"。直接指出问题。`,
-		},
+		{name: "架构视角", prompt: strings.TrimSpace(sections[0])},
+		{name: "边界与正确性视角", prompt: strings.TrimSpace(sections[1])},
+		{name: "Devil's Advocate（魔鬼代言人）", prompt: strings.TrimSpace(sections[2])},
 	}
 
+	// 依次运行各 Critic，收集点评结果
 	var opinions []string
 	for _, p := range prompts {
-		opinion, err := m.runCritic(task, answer, p.prompt)
+		opinion, err := m.runCritic(parentInv, input, answer, p.prompt)
 		if err != nil {
 			opinions = append(opinions, fmt.Sprintf("[%s] 点评失败: %v", p.name, err))
 			continue
@@ -88,19 +73,16 @@ func (m *DeliberateMode) critics(task *core.Task, answer string) []string {
 	return opinions
 }
 
-// runCritic 以指定视角提示词运行一次独立的 LLM 对话，返回点评文本。
-func (m *DeliberateMode) runCritic(task *core.Task, answer, criticPrompt string) (string, error) {
-	criticTask := core.NewTask(task.Input, "critic")
-	criticTask.SessionInfo = core.NewSession()
-	criticTask.SessionInfo.Provider = task.SessionInfo.Provider
-	criticTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: criticPrompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("原始问题：%s\n\n待点评的回答：\n%s", task.Input, answer)},
-	}
+// runCritic 在同一任务的子 Invocation 中独立点评，继承模型和工作区。
+func (m *DeliberateMode) runCritic(parentInv *core.Invocation, input, answer, criticPrompt string) (string, error) {
+	return m.Runtime.Run(newCriticInvocation(parentInv, input, answer, criticPrompt))
+}
 
-	err, result := m.Runtime.RunTask(criticTask)
-	if err != nil {
-		return "", err
-	}
-	return result, nil
+// newCriticInvocation 为 Critic 创建独立的子调用上下文，继承模型和工作区。
+func newCriticInvocation(parentInv *core.Invocation, input, answer, criticPrompt string) *core.Invocation {
+	inv := parentInv.NewChild()
+	roles.RestrictTools(inv, "read")
+	inv.AppendMessage(llm.RoleSystem, criticPrompt)
+	inv.AppendMessage(llm.RoleUser, fmt.Sprintf("原始问题：%s\n\n待点评的回答：\n%s", input, answer))
+	return inv
 }

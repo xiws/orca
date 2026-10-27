@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Repair 是修复 Agent。
@@ -25,24 +25,22 @@ type RepairResult struct {
 // Repair 根据失败原因生成修复方案。
 //
 // 输入：原始 Specification + VerifyResult（失败原因）。
-// 输出：修复指令，交给 Executor 执行。
-func (r *Repair) Repair(task *core.Task, verifyResult *VerifyResult) (*RepairResult, error) {
-	repairTask := core.NewTask("generate repair plan", "repair")
-	repairTask.SessionInfo.Messages = []llm.ChatMessage{
-		{Role: llm.RoleSystem, Content: repairSystemPrompt},
-		{Role: llm.RoleUser, Content: r.buildRepairInput(task, verifyResult)},
-	}
-
-	err, result := r.Runtime.RunTask(repairTask)
+// 输出：修复指令，交给 Executor 执行；仅使用调用方已允许的 read 工具。
+func (r *Repair) Repair(parentInv *core.Invocation, task *domain.Task, verifyResult *VerifyResult) (*RepairResult, error) {
+	// 构建包含原始需求和失败原因的输入
+	userInput := r.buildRepairInput(task, verifyResult)
+	// 在子 Invocation 中执行 LLM 对话，限制工具为 read
+	output, err := runRole(r.Runtime, parentInv, repairSystemPrompt, userInput, "read")
 	if err != nil {
 		return nil, fmt.Errorf("repair: %w", err)
 	}
 
-	return parseRepairResult(result)
+	return parseRepairResult(output)
 }
 
-// buildRepairInput 构建 Repair 的输入。
-func (r *Repair) buildRepairInput(task *core.Task, verifyResult *VerifyResult) string {
+// buildRepairInput 构建 Repair 的输入文本。
+// 拼接顺序：原始需求 → 验收标准 → 验证失败原因 → 修复指令。
+func (r *Repair) buildRepairInput(task *domain.Task, verifyResult *VerifyResult) string {
 	var input string
 
 	// 原始需求

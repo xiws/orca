@@ -42,8 +42,8 @@ const plannerSystemPrompt = `你是一个规划 Agent。
 3. 错误处理: 考虑失败路径（verify -> execute 或 verify -> repair）。
 4. 工具限制: 不同节点可以使用不同的工具集。
    - execute: 完整工具集 (read, write, edit, bash)
-   - verify: 只读工具 (read, bash)
-   - repair: 完整工具集
+   - verify: 验证工具 (read, bash；bash 用于运行验证命令，并非只读工具)
+   - repair: 只读工具 (read)，仅生成修复方案供 execute 执行
 
 ## 常见模式
 

@@ -3,7 +3,7 @@ package roles
 import (
 	"testing"
 
-	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 func TestClarifyStatus_Values(t *testing.T) {
@@ -21,9 +21,9 @@ func TestClarifyStatus_Values(t *testing.T) {
 func TestClarifyResult_Ready(t *testing.T) {
 	result := &ClarifyResult{
 		Status: ClarifyReady,
-		Specification: &core.Specification{
+		Specification: &domain.Specification{
 			Goal: "实现用户登录功能",
-			Requirements: []core.Requirement{
+			Requirements: []domain.Requirement{
 				{ID: "R1", Description: "支持邮箱登录", Priority: "high"},
 			},
 			AcceptanceCriteria: []string{"用户可以成功登录"},
@@ -64,7 +64,7 @@ func TestClarifyResult_Question(t *testing.T) {
 func TestClarifyResult_Assumption(t *testing.T) {
 	result := &ClarifyResult{
 		Status: ClarifyAssumption,
-		Specification: &core.Specification{
+		Specification: &domain.Specification{
 			Goal: "增加用户删除功能",
 		},
 		Assumptions: []string{
@@ -99,9 +99,9 @@ func TestParseClarifyResult_Simple(t *testing.T) {
 }
 
 func TestSpecification_Structure(t *testing.T) {
-	spec := &core.Specification{
+	spec := &domain.Specification{
 		Goal: "优化系统性能",
-		Requirements: []core.Requirement{
+		Requirements: []domain.Requirement{
 			{ID: "R1", Description: "增加缓存层", Priority: "high"},
 			{ID: "R2", Description: "优化数据库查询", Priority: "medium"},
 		},
@@ -142,7 +142,7 @@ func TestRequirement_Priority(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		req := core.Requirement{ID: "R1", Description: "test", Priority: tt.priority}
+		req := domain.Requirement{ID: "R1", Description: "test", Priority: tt.priority}
 		// Priority 只是字符串，不做验证，但约定为 high/medium/low
 		if req.Priority == "" {
 			t.Error("priority should not be empty")

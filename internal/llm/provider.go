@@ -5,6 +5,7 @@ import (
 )
 
 var (
+	// MODEL_FILE 是模型配置文件的文件名，从用户主目录或项目目录中加载。
 	MODEL_FILE = "models.json"
 )
 

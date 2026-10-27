@@ -18,7 +18,10 @@ type ToolBeforeEvent struct {
 	reasoning string // 模型对此工具调用的推理
 }
 
-func (e ToolBeforeEvent) GetId() int64    { return e.id }
+// GetId 返回事件的唯一标识。
+func (e ToolBeforeEvent) GetId() int64 { return e.id }
+
+// GetName 返回事件名称。
 func (e ToolBeforeEvent) GetName() string { return "ToolBeforeEvent" }
 
 // ToolName 返回命令名（"read"、"write"、"edit"、"bash"、"create_task"）。
@@ -54,6 +57,7 @@ func NewToolBeforeEvent(tool, file, meta, reasoning string, id int64) ToolBefore
 // 使用 glamour，带有工具特定的 emoji 和格式。
 type ToolEventBeforeHandler struct{}
 
+// Handle 处理 before-event，将结构化预览渲染为 markdown 输出到终端。
 func (b ToolEventBeforeHandler) Handle(ent event.Event) {
 	e, ok := ent.(ToolBeforeEvent)
 	if !ok {
@@ -70,50 +74,11 @@ func (b ToolEventBeforeHandler) Handle(ent event.Event) {
 		return
 	}
 
-	md := b.renderMarkdown(e)
+	md := renderBeforeMarkdown(e.tool, e.file, e.meta, e.reasoning)
 	rendered, err := renderer.Render(md)
 	if err != nil {
 		fmt.Printf("%s %s %s\n", e.tool, e.file, e.meta)
 		return
 	}
 	fmt.Print(rendered)
-}
-
-// renderMarkdown 构建工具 before-event 的 markdown 表示。
-func (b ToolEventBeforeHandler) renderMarkdown(e ToolBeforeEvent) string {
-	title := buildTitle(e.tool, e.file, e.meta)
-
-	if e.reasoning == "" {
-		return fmt.Sprintf("**%s**\n", title)
-	}
-	return fmt.Sprintf("**%s**\n> %s\n", title, e.reasoning)
-}
-
-// buildTitle 返回工具的 emoji 前缀标题行。
-func buildTitle(tool, file, meta string) string {
-	const (
-		emojiRead       = "📖"
-		emojiWrite      = "📝"
-		emojiEdit       = "✏️"
-		emojiBash       = "💻"
-		emojiCreateTask = "🎯"
-	)
-
-	switch tool {
-	case "read":
-		return fmt.Sprintf("%s Read `%s` (%s)", emojiRead, file, meta)
-	case "write":
-		return fmt.Sprintf("%s Write `%s` (%s)", emojiWrite, file, meta)
-	case "edit":
-		return fmt.Sprintf("%s Edit `%s` (%s)", emojiEdit, file, meta)
-	case "bash":
-		return fmt.Sprintf("%s $ `%s`", emojiBash, meta)
-	case "create_task":
-		return fmt.Sprintf("%s %s", emojiCreateTask, meta)
-	default:
-		if file != "" {
-			return fmt.Sprintf("`%s` — `%s` (%s)", tool, file, meta)
-		}
-		return fmt.Sprintf("`%s` (%s)", tool, meta)
-	}
 }

@@ -4,64 +4,24 @@ import (
 	"fmt"
 
 	"github.com/xiws/orca/internal/agent/core"
-	"github.com/xiws/orca/internal/llm"
+	"github.com/xiws/orca/internal/domain"
 )
 
 // Executor 是执行 Agent。
-// 它负责实际完成任务，调用工具（read/write/edit/bash）完成工作。
-// Executor 本质上是现有 Runtime.execute() 循环的封装。
+// 它负责实际完成任务，在调用方的工具权限内完成工作。
+// Executor 本质上是 Runtime.Run 的封装。
 type Executor struct {
 	Runtime *core.Runtime
-
-	// Tools 限制 Executor 可使用的工具列表。
-	// nil 表示使用全部可用工具。
-	Tools []string
 }
 
-// Execute 执行一个任务。
-//
-// 它构建合适的 Task + Session 后调用 Runtime.RunTask。
-// 如果 task 已有 Specification，会将其作为上下文注入。
-func (e *Executor) Execute(task *core.Task) (string, error) {
-	// 如果任务没有 Session，创建一个新的
-	if task.SessionInfo == nil {
-		task.SessionInfo = core.NewSession()
-	}
-
-	// 构建执行上下文
-	context := e.buildContext(task)
-	if context != "" {
-		task.SessionInfo.AppendMessage(llm.RoleSystem, context)
-	}
-
-	// 调用 Runtime 执行
-	err, result := e.Runtime.RunTask(task)
-	if err != nil {
-		return "", fmt.Errorf("executor: %w", err)
-	}
-
-	return result, nil
+// Execute 执行调用方提供的 Invocation，不创建 Task 或 Session。
+func (e *Executor) Execute(inv *core.Invocation) (string, error) {
+	return e.Runtime.Run(inv)
 }
 
-// buildContext 根据任务信息构建执行上下文。
-func (e *Executor) buildContext(task *core.Task) string {
-	var ctx string
-
-	// 如果有 Specification，注入为上下文
-	if task.Specification != nil {
-		ctx += formatSpecification(task.Specification)
-	}
-
-	// 如果有原始输入但没有 Specification，使用原始输入
-	if task.Input != "" && task.Specification == nil {
-		ctx += "任务目标:\n" + task.Input + "\n"
-	}
-
-	return ctx
-}
-
-// formatSpecification 将 Specification 格式化为可读文本。
-func formatSpecification(spec *core.Specification) string {
+// FormatSpecification 将 Specification 格式化为可读文本，用于注入 LLM 上下文。
+// 各段按需拼接：目标 → 需求 → 约束 → 验收标准 → 假设。
+func FormatSpecification(spec *domain.Specification) string {
 	if spec == nil {
 		return ""
 	}
@@ -69,6 +29,7 @@ func formatSpecification(spec *core.Specification) string {
 	var result string
 	result += "## 任务目标\n" + spec.Goal + "\n\n"
 
+	// 需求列表，按优先级标注
 	if len(spec.Requirements) > 0 {
 		result += "## 需求\n"
 		for _, req := range spec.Requirements {
@@ -77,6 +38,7 @@ func formatSpecification(spec *core.Specification) string {
 		result += "\n"
 	}
 
+	// 约束条件
 	if len(spec.Constraints) > 0 {
 		result += "## 约束\n"
 		for _, c := range spec.Constraints {
@@ -85,6 +47,7 @@ func formatSpecification(spec *core.Specification) string {
 		result += "\n"
 	}
 
+	// 验收标准
 	if len(spec.AcceptanceCriteria) > 0 {
 		result += "## 验收标准\n"
 		for _, c := range spec.AcceptanceCriteria {
@@ -93,6 +56,7 @@ func formatSpecification(spec *core.Specification) string {
 		result += "\n"
 	}
 
+	// 假设
 	if len(spec.Assumptions) > 0 {
 		result += "## 假设\n"
 		for _, a := range spec.Assumptions {

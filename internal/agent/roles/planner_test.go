@@ -3,7 +3,7 @@ package roles
 import (
 	"testing"
 
-	"github.com/xiws/orca/internal/agent/core"
+	"github.com/xiws/orca/internal/domain"
 )
 
 func TestDefaultWorkflowPlan(t *testing.T) {
@@ -60,9 +60,9 @@ func TestFormatSpecificationForPlanner_Nil(t *testing.T) {
 }
 
 func TestFormatSpecificationForPlanner_Full(t *testing.T) {
-	spec := &core.Specification{
+	spec := &domain.Specification{
 		Goal: "实现功能",
-		Requirements: []core.Requirement{
+		Requirements: []domain.Requirement{
 			{ID: "R1", Description: "需求1", Priority: "high"},
 		},
 		Constraints:        []string{"约束1"},

@@ -1,5 +1,8 @@
 # cmd/cli（参数解析与入口）
 
+> **状态：部分过时** ｜ 讲的是 `cmd/cli`，但 `CliArgs` 已新增 `Mode` / `SessionId` /
+> `SubCommand` / `SubArgs` / `After` 字段；以 `cmd/cli/args.go` 为准。
+
 `cmd/cli` 是 orca 的命令行入口，由 `args.go`（参数解析）和 `main.go`（编排主流程）两个文件组成：前者把命令行
 参数解析成结构化对象，后者负责把一次调用编排成一个"任务"交给 runtime 执行。两者通过 `ParseArgs` → `*CliArgs`
 串联，因此先讲参数解析，再讲入口主流程。
@@ -121,7 +124,7 @@ func main() {
 
 - **system 消息**（两者择一）：
   - 若用 `-s` / `-sp`（`SystemPrompt`）指定了自定义系统提示文件，就 `os.ReadFile` 读其内容作为 system 消息；
-  - 否则用默认 system 提示：`utils.GetSystemPrompt(PromptContext{ ProjectPath: utils.GetCurrentPath(), ContextLength: task.SessionInfo.Provider.ContextWindow })`。
+  - 否则用默认 system 提示：`utils.GetSystemPrompt(SystemPromptContext{ ProjectPath: utils.GetCurrentPath(), ContextLength: task.SessionInfo.Provider.ContextWindow })`。
 - **user 消息**：`userPrompt(args)` 渲染出来的内容。
 - **模型信息**：若同时指定了 `-p`（provider）和 `-m`（model），通过 `task.SessionInfo.SetProvider(provider, model)` 写入会话，覆盖默认 provider。
 

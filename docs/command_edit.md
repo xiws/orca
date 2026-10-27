@@ -1,5 +1,8 @@
 # edit
 
+> **状态：历史实现** ｜ hunkpatch 仍被 `internal/handler/edit.go` 使用，但该 handler
+> 不在主链路；当前 `edit` 工具用 `old_string` / `new_string` 精准替换。
+
 go get github.com/zbysir/hunkpatch
 
 # hunkpatch

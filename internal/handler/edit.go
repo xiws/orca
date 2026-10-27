@@ -28,10 +28,12 @@ func (t EditHandler) Handle(cmd command.CommandOption) (error, any) {
 	publish(t.Publisher, event.NewToolBeforeEvent("edit", opt.Filename, meta, opt.Reasoning, opt.Id))
 	summary, err := t.edit(opt)
 	okStatus := err == nil
+	// After-event 成功时携带摘要，失败时为空。
 	publish(t.Publisher, event.NewToolAfterEvent("edit", opt.Filename, "", okStatus, summary, 0, opt.Id))
 	return nil, ResultFor(opt, summary, err)
 }
 
+// edit 依次应用所有 diff 片段到文件内容，全部成功后写回文件。
 func (t EditHandler) edit(opt *EditOption) (string, error) {
 	if len(opt.Contents) == 0 {
 		return "", ErrEmptyContents
@@ -41,6 +43,7 @@ func (t EditHandler) edit(opt *EditOption) (string, error) {
 		return "", err
 	}
 
+	// 依次应用每个 diff 片段，每个片段基于前一个的结果。
 	updated := original
 	summaries := make([]string, 0, len(opt.Contents))
 	for i, fragment := range opt.Contents {
