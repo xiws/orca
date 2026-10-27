@@ -1,5 +1,8 @@
 # command
 
+> **状态：历史实现** ｜ 本文对应 `pkg/command` + `internal/handler` 的文本命令协议；
+> 当前工具执行走 `internal/tools/gateway.go`。
+
 ## 目标
 
 实现 agent 可调用的四类基础工具命令：**读（read）/ 写（write）/ 编辑（edit）/ bash**。

@@ -1,5 +1,8 @@
 # cmd/cli（参数解析与入口）
 
+> **状态：部分过时** ｜ 讲的是 `cmd/cli`，但 `CliArgs` 已新增 `Mode` / `SessionId` /
+> `SubCommand` / `SubArgs` / `After` 字段；以 `cmd/cli/args.go` 为准。
+
 `cmd/cli` 是 orca 的命令行入口，由 `args.go`（参数解析）和 `main.go`（编排主流程）两个文件组成：前者把命令行
 参数解析成结构化对象，后者负责把一次调用编排成一个"任务"交给 runtime 执行。两者通过 `ParseArgs` → `*CliArgs`
 串联，因此先讲参数解析，再讲入口主流程。

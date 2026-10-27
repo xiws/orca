@@ -1,5 +1,8 @@
 # 对接大模型
 
+> **状态：历史实现** ｜ 这是早期 `internal/llm` 的设计笔记（`Request(..., msgs chan)`）；
+> 当前主链路走 `internal/providers` 的 `Client.Complete(ctx, req, Sink)`。
+
 数据来源：
 ~/.orca/models.json，{project}/.orca/models.json
 

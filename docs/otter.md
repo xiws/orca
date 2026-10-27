@@ -1,5 +1,8 @@
 # otter provider
 
+> **状态：历史实现** ｜ 本文对应早期 `internal/llm/otter.go`；当前 otter 适配在
+> `internal/providers/otter.go`，配置与认证部分仍可参考。
+
 通过 [otter](https://github.com/xiws/otter) 平台接入 ChatGPT / Gemini / DeepSeek：
 orca 以 Go 库方式引用 otter 的 `pkg/provider`，直接复用 otter 已登录的凭据，
 把模型的网页会话包装成 orca 的 `Requester`，无需自建 HTTP 服务。

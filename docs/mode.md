@@ -1,5 +1,9 @@
 # mode
 
+> **状态：部分过时** ｜ 八种模式与角色矩阵仍适用；文中目录结构
+> （`internal/agent/workflow/`、`core/task.go` 等）与当前代码不符，模式落地见
+> `internal/workflow/template.go` + `internal/agent/profile.go`。
+
 模式（Mode）是对角色（roles）与编排层（workflow）的一次组合：每个模式根据侧重点不同，
 挑选不同的角色、以不同的顺序和循环方式把它们串起来。
 

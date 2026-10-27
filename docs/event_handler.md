@@ -1,5 +1,8 @@
 # 事件和命令
 
+> **状态：历史实现** ｜ Command/EventBus 的接口草稿；当前主链路事件是
+> `domain.Event` + `store.events`。
+
 接口: Command:CommandHandler 1:1
 
 ```go
