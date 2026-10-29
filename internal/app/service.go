@@ -15,22 +15,15 @@ import (
 	"github.com/xiws/orca/internal/workflow"
 )
 
-// Store 定义状态存储接口，支持 mutation 原子提交和各种实体查询。
+// Store 定义状态存储接口。状态只存在于当前进程内。
 type Store interface {
 	Apply(context.Context, domain.Mutation) error
 	Session(context.Context, domain.SessionID) (*domain.Session, error)
-	Sessions(context.Context) ([]domain.Session, error)
-	Task(context.Context, domain.TaskID, int) (*domain.Task, error)
 	Run(context.Context, domain.RunID) (*domain.Run, error)
 	Runs(context.Context) ([]domain.Run, error)
 	Input(context.Context, domain.InputRequestID) (*domain.InputRequest, error)
-	Invocation(context.Context, domain.InvocationID) (*domain.Invocation, error)
-	Invocations(context.Context, domain.RunID) ([]domain.Invocation, error)
-	Events(context.Context, domain.RunID, int64, int) ([]domain.Event, error)
-	Tools(context.Context, domain.RunID) ([]domain.ToolExecution, error)
 	Inputs(context.Context, domain.RunID) ([]domain.InputRequest, error)
-	HasUnresolved(context.Context, domain.RunID) (bool, error)
-	DeleteSessions(context.Context, []domain.SessionID) error
+	Events(context.Context, domain.RunID, int64, int) ([]domain.Event, error)
 }
 
 // Workflow 定义工作流驱动接口。
@@ -109,12 +102,6 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest) (*domain.Run, e
 	template, err := workflow.Mode(req.Mode)
 	if err != nil {
 		return nil, err
-	}
-	// 检查是否存在结果未知的运行
-	if unknown, err := s.store.HasUnresolved(ctx, 0); err != nil {
-		return nil, err
-	} else if unknown {
-		return nil, domain.ErrUnknown
 	}
 	// 最多重试 8 次以处理 CAS 冲突
 	for attempt := 0; attempt < 8; attempt++ {
@@ -201,16 +188,6 @@ func (s *Service) Run(ctx context.Context, id domain.RunID) (*domain.Run, error)
 // Runs 查询所有运行。
 func (s *Service) Runs(ctx context.Context) ([]domain.Run, error) { return s.store.Runs(ctx) }
 
-// Sessions 查询所有会话。
-func (s *Service) Sessions(ctx context.Context) ([]domain.Session, error) {
-	return s.store.Sessions(ctx)
-}
-
-// Session 查询单个会话。
-func (s *Service) Session(ctx context.Context, id domain.SessionID) (*domain.Session, error) {
-	return s.store.Session(ctx, id)
-}
-
 // Observe 查询运行的事件流，最多返回 256 条。
 func (s *Service) Observe(ctx context.Context, id domain.RunID, after int64) ([]domain.Event, error) {
 	return s.store.Events(ctx, id, after, 256)
@@ -258,8 +235,7 @@ func (s *Service) Wait(ctx context.Context, id domain.RunID) (*domain.Run, error
 		if err != nil {
 			return nil, err
 		}
-		// 终态、需协调或已中断时直接返回
-		if run.State.Terminal() || run.State == domain.Reconciling || run.State == domain.Interrupted {
+		if run.State.Terminal() {
 			return run, nil
 		}
 		// 等待状态且有待处理的输入时返回
@@ -354,90 +330,6 @@ func (s *Service) RespondToInput(ctx context.Context, id domain.InputRequestID, 
 	return s.store.Run(ctx, run.RootRunID)
 }
 
-// ResumeRun 恢复被中断的运行，重新应用全局策略。
-func (s *Service) ResumeRun(ctx context.Context, id domain.RunID) (*domain.Run, error) {
-	run, err := s.store.Run(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if run.State != domain.Interrupted && run.State != domain.Queued {
-		return nil, fmt.Errorf("only queued or interrupted runs can resume, got %s", run.State)
-	}
-	runs, err := s.store.Runs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// 确认不存在结果未知的运行
-	if unknown, err := s.store.HasUnresolved(ctx, 0); err != nil {
-		return nil, err
-	} else if unknown {
-		return nil, domain.ErrUnknown
-	}
-	mutation := domain.Mutation{}
-	// 将运行树中的中断运行恢复为运行中，并重新应用策略
-	for i := range runs {
-		r := &runs[i]
-		if r.RootRunID != run.RootRunID || r.State.Terminal() {
-			continue
-		}
-		if r.State == domain.Interrupted {
-			r.State = domain.Running
-		}
-		r.Policy = r.Policy.Intersect(s.options.Policy)
-		mutation.Runs = append(mutation.Runs, r)
-	}
-	if err := s.store.Apply(ctx, mutation); err != nil {
-		return nil, err
-	}
-	s.signal()
-	return s.store.Run(ctx, run.RootRunID)
-}
-
-// RetryTask 重试已完成的任务，创建新的运行。
-func (s *Service) RetryTask(ctx context.Context, id domain.TaskID) (*domain.Run, error) {
-	task, err := s.store.Task(ctx, id, 0)
-	if err != nil {
-		return nil, err
-	}
-	runs, err := s.store.Runs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// 找到该任务最新的已完成运行
-	var previous *domain.Run
-	for i := range runs {
-		r := &runs[i]
-		if r.TaskID == id {
-			if !r.State.Terminal() {
-				return nil, fmt.Errorf("task still has active or unresolved execution")
-			}
-			if previous == nil || r.CreatedAt > previous.CreatedAt {
-				previous = r
-			}
-		}
-	}
-	if previous == nil {
-		return nil, domain.ErrNotFound
-	}
-	if unknown, err := s.store.HasUnresolved(ctx, 0); err != nil {
-		return nil, err
-	} else if unknown {
-		return nil, domain.ErrUnknown
-	}
-	template, err := workflow.Mode(previous.Mode)
-	if err != nil {
-		return nil, err
-	}
-	// 使用之前运行的配置创建新运行
-	run := &domain.Run{ID: domain.RunID(domain.NewID()), TaskID: id, TaskVersion: task.Version, SessionID: task.SessionID, Workspace: previous.Workspace, Mode: previous.Mode, TemplateVersion: 1, Model: previous.Model, Policy: previous.Policy.Intersect(s.options.Policy), Limits: s.options.Limits, State: domain.Queued, Nodes: template.Nodes(), Prompt: task.Input, SystemPrompt: previous.SystemPrompt, CreatedAt: time.Now().UnixNano()}
-	run.RootRunID = run.ID
-	if err := s.store.Apply(ctx, domain.Mutation{Runs: []*domain.Run{run}, Events: []domain.Event{{RunID: run.ID, Kind: "state", Content: "queued"}}}); err != nil {
-		return nil, err
-	}
-	s.signal()
-	return run, nil
-}
-
 // Cancel 取消运行树中的所有运行。
 func (s *Service) Cancel(ctx context.Context, id domain.RunID) error {
 	run, err := s.store.Run(ctx, id)
@@ -454,9 +346,6 @@ func (s *Service) Cancel(ctx context.Context, id domain.RunID) error {
 		r := &runs[i]
 		if r.RootRunID != run.RootRunID || r.State.Terminal() {
 			continue
-		}
-		if r.State == domain.Reconciling {
-			return domain.ErrUnknown
 		}
 		r.State = domain.Cancelling
 		mutation.Runs = append(mutation.Runs, r)
@@ -500,23 +389,14 @@ func (s *Service) work() {
 				s.setWorkerError(err)
 				break
 			}
-			unknown, err := s.store.HasUnresolved(s.ctx, 0)
-			if err != nil {
-				s.setWorkerError(err)
-				break
-			}
 			// 按创建时间排序，确保先入先出
 			sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt < runs[j].CreatedAt })
 			var next *domain.Run
 			// 选择下一个可执行的根运行
 			for i := range runs {
 				r := &runs[i]
-				// 跳过子运行、已终止、需协调或已中断的运行
-				if r.ParentRunID != 0 || r.State.Terminal() || r.State == domain.Reconciling || r.State == domain.Interrupted {
-					continue
-				}
-				// 存在未知结果时只允许取消操作
-				if unknown && r.State != domain.Cancelling {
+				// 跳过子运行和已终止的运行
+				if r.ParentRunID != 0 || r.State.Terminal() {
 					continue
 				}
 				// 检查同一会话中是否有更早的运行阻塞

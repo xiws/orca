@@ -229,48 +229,6 @@ func TestDelegationCompletesWithOneModelSlot(t *testing.T) {
 	}
 }
 
-func TestUnknownModelOutcomeCannotResumeOrRetry(t *testing.T) {
-	f := &scriptedModel{answer: func(context.Context, model.Request) (model.Response, error) {
-		return model.Response{}, model.ErrUnknown
-	}}
-	s, _, _ := setup(t, f, 1)
-	run := submit(t, s, app.SubmitRequest{Input: "goal", Mode: "ask"})
-	result := wait(t, s, run.ID)
-	if result.State != domain.Reconciling {
-		t.Fatalf("unknown converted to %s", result.State)
-	}
-	if _, err := s.ResumeRun(context.Background(), run.ID); err == nil {
-		t.Fatal("unknown resumed")
-	}
-	if _, err := s.RetryTask(context.Background(), run.TaskID); err == nil {
-		t.Fatal("unknown bypassed by retry")
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.requests) != 1 {
-		t.Fatal("unknown repeated")
-	}
-}
-
-func TestCancelInFlightModelPreservesUnknown(t *testing.T) {
-	started := make(chan struct{})
-	f := &scriptedModel{answer: func(ctx context.Context, _ model.Request) (model.Response, error) {
-		close(started)
-		<-ctx.Done()
-		return model.Response{}, model.ErrUnknown
-	}}
-	s, _, _ := setup(t, f, 1)
-	run := submit(t, s, app.SubmitRequest{Input: "cancel me", Mode: "ask"})
-	<-started
-	if err := s.Cancel(context.Background(), run.ID); err != nil {
-		t.Fatal(err)
-	}
-	result := wait(t, s, run.ID)
-	if result.State != domain.Reconciling {
-		t.Fatalf("cancel hid unknown request: %+v", result)
-	}
-}
-
 func TestHumanInputContinuesSameInvocation(t *testing.T) {
 	f := &scriptedModel{answer: func(_ context.Context, req model.Request) (model.Response, error) {
 		if req.Messages[len(req.Messages)-1].Role == "tool" {

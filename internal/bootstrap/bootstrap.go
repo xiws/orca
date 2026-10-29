@@ -58,10 +58,6 @@ func Open(workspace string) (*Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Recover(context.Background()); err != nil && !errors.Is(err, domain.ErrUnknown) {
-		db.Close()
-		return nil, err
-	}
 	// 初始化工具网关。
 	gateway, err := tools.New(workspace, db)
 	if err != nil {
@@ -82,11 +78,6 @@ func Open(workspace string) (*Environment, error) {
 	// 将事件发布回调绑定到 Agent 运行器。
 	agentRunner.Sink = service.Publish
 	return &Environment{Service: service, store: db, tools: gateway}, nil
-}
-
-// Import 从外部 JSON 文件导入会话数据。
-func (e *Environment) Import(ctx context.Context, path, owner string) (domain.SessionID, error) {
-	return e.store.Import(ctx, path, owner)
 }
 
 // Close 按顺序关闭所有子系统：应用服务、工具网关、状态存储。

@@ -39,10 +39,6 @@ const (
 	Running RunState = "running"
 	// Waiting 等待用户输入或审批。
 	Waiting RunState = "waiting"
-	// Interrupted 被中断，需要恢复。
-	Interrupted RunState = "interrupted"
-	// Reconciling 对账中，外部操作结果不确定。
-	Reconciling RunState = "reconciling"
 	// Cancelling 正在取消。
 	Cancelling RunState = "cancelling"
 	// Succeeded 执行成功（终态）。
@@ -65,23 +61,17 @@ func CanTransition(from, to RunState) bool {
 	if from.Terminal() {
 		return false
 	}
-	// 任何非终态都可以转为 cancelling。
-	if to == Cancelling {
+	// 任何非终态都可以被取消：单进程内取消是立即生效的。
+	if to == Cancelling || to == Cancelled {
 		return true
 	}
 	switch from {
 	case Queued:
-		return to == Running || to == Interrupted || to == Failed
+		return to == Running || to == Failed
 	case Running:
-		return to == Waiting || to == Interrupted || to == Reconciling || to == Succeeded || to == Failed
+		return to == Waiting || to == Succeeded || to == Failed
 	case Waiting:
-		return to == Running || to == Interrupted || to == Reconciling || to == Failed
-	case Interrupted:
-		return to == Running || to == Reconciling || to == Failed
-	case Reconciling:
-		return to == Interrupted || to == Failed
-	case Cancelling:
-		return to == Cancelled || to == Reconciling
+		return to == Running || to == Failed
 	}
 	return false
 }

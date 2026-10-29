@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/xiws/orca/internal/app"
-	"github.com/xiws/orca/internal/domain"
 	"github.com/xiws/orca/internal/model"
 )
 
@@ -109,26 +108,4 @@ func BenchmarkAskLongHistory(b *testing.B) {
 	total := int64(len(f.requests) - startCount)
 	f.mu.Unlock()
 	b.ReportMetric(float64(total)/float64(b.N), "model_calls/op")
-}
-
-func BenchmarkHasUnresolved(b *testing.B) {
-	f := &scriptedModel{answer: func(context.Context, model.Request) (model.Response, error) {
-		return answer("ok"), nil
-	}}
-	s, db, _ := setup(b, f, 1)
-	var rootID domain.RunID
-	for i := 0; i < 50; i++ {
-		run := submit(b, s, app.SubmitRequest{Input: fmt.Sprintf("turn %d", i), Mode: "ask"})
-		wait(b, s, run.ID)
-		if i == 0 {
-			rootID = run.ID
-		}
-	}
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if _, err := db.HasUnresolved(context.Background(), rootID); err != nil {
-			b.Fatal(err)
-		}
-	}
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/xiws/orca/internal/domain"
 	"github.com/xiws/orca/internal/model"
 	"github.com/xiws/orca/internal/store"
-	"github.com/xiws/orca/internal/tools"
 )
 
 func (h *harness) validation(run *domain.Run, results []string) (*domain.Invocation, []*domain.ToolExecution) {
@@ -187,62 +186,6 @@ func (s *runnerBoundaryStore) Apply(ctx context.Context, m domain.Mutation) erro
 	return s.Store.Apply(ctx, m)
 }
 
-func TestRunnerBoundaryFailuresDoNotTerminalizeWorkflow(t *testing.T) {
-	for _, stage := range []string{"settle read", "settle CAS", "pre-tool"} {
-		t.Run(stage, func(t *testing.T) {
-			h := newHarness(t, nil, 1)
-			fs := &runnerBoundaryStore{Store: h.db, stage: stage}
-			gateway, err := tools.New(h.workspace, fs)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { gateway.Close() })
-			sends := 0
-			client := modelFunc(func(context.Context, model.Request) (model.Response, error) {
-				sends++
-				fs.armed = true
-				if stage == "pre-tool" && sends == 1 {
-					return call("read", `{"filename":"missing.txt"}`), nil
-				}
-				return answer("done"), nil
-			})
-			h.w.agent = agent.NewRunner(fs, client, gateway, 1)
-			run := h.drive(h.run("ask", "goal").ID)
-			want := domain.Reconciling
-			if stage == "pre-tool" {
-				want = domain.Interrupted
-			}
-			if run.State != want || sends != 1 || fs.faults == 0 || !strings.Contains(run.Error, domain.ErrCheckpoint.Error()) || run.Nodes[0].State == "failed" {
-				t.Fatalf("checkpoint failure terminalized workflow: %+v sends=%d faults=%d", run, sends, fs.faults)
-			}
-			if stage == "settle CAS" && fs.faults != 8 {
-				t.Fatalf("CAS retry count=%d", fs.faults)
-			}
-			inv, err := h.db.Invocation(context.Background(), run.Nodes[0].InvocationID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if stage == "pre-tool" {
-				if inv.Phase != "tools" || strings.Contains(run.Error, domain.ErrUnknown.Error()) {
-					t.Fatalf("safe pre-tool failure poisoned as unknown: %+v", run)
-				}
-				run.State = domain.Running
-				h.apply(domain.Mutation{Runs: []*domain.Run{run}})
-				if done := h.drive(run.ID); done.State != domain.Succeeded || sends != 2 {
-					t.Fatalf("safe tool retry failed: %+v sends=%d", done, sends)
-				}
-			} else {
-				if inv.Phase != "model_started" || inv.Reservation == 0 {
-					t.Fatalf("uncertain model intent lost: %+v", inv)
-				}
-				if resumed := h.drive(run.ID); resumed.State != domain.Reconciling || sends != 1 {
-					t.Fatalf("uncertain model replayed: %+v sends=%d", resumed, sends)
-				}
-			}
-		})
-	}
-}
-
 func TestVerifierEvidenceIdentityNotFreeText(t *testing.T) {
 	records := []validationRecord{{Key: "100:2:a", CallID: "a", Name: "bash", Successful: true}, {Key: "100:4:shared", CallID: "shared", Name: "bash", Successful: true}, {Key: "100:6:shared", CallID: "shared", Name: "bash", Successful: true}}
 	for _, tc := range []struct {
@@ -341,70 +284,5 @@ func TestRootRepairNodeIdentityIsLocalButCounterIsGlobal(t *testing.T) {
 	}
 	if root.Repairs != 3 {
 		t.Fatalf("global counter=%d", root.Repairs)
-	}
-}
-
-func TestRecoveredChildStatePropagatesBeforeAnyExecution(t *testing.T) {
-	for _, phase := range []string{"model_started", "tool_started", "model"} {
-		t.Run(phase, func(t *testing.T) {
-			h := newHarness(t, nil, 1)
-			root := h.run("code", "root")
-			root.State = domain.Running
-			h.apply(domain.Mutation{Runs: []*domain.Run{root}})
-			root.State = domain.Waiting
-			h.apply(domain.Mutation{Runs: []*domain.Run{root}})
-			child := h.child(root, "code")
-			child.State = domain.Running
-			inv := &domain.Invocation{ID: domain.InvocationID(domain.NewID()), RunID: child.ID, NodeID: child.Nodes[0].ID, Phase: phase, Thread: domain.Thread{ContextVersion: 1}}
-			var records []*domain.ToolExecution
-			if phase == "tool_started" {
-				inv.Phase = "tools"
-				inv.Thread.Messages = []model.Message{{Role: "assistant", ToolCalls: []model.Call{{ID: "shell", Name: "bash"}}}}
-				records = []*domain.ToolExecution{{Key: fmt.Sprintf("%d:1:shell", inv.ID), RunID: child.ID, InvocationID: inv.ID, Name: "bash", State: "started"}}
-			}
-			child.Nodes[0].InvocationID = inv.ID
-			h.apply(domain.Mutation{Runs: []*domain.Run{child}, Invocations: []*domain.Invocation{inv}, Tools: records})
-			if err := h.db.Recover(context.Background()); err != nil {
-				t.Fatal(err)
-			}
-			result := h.drive(root.ID)
-			want := domain.Reconciling
-			if phase == "model" {
-				want = domain.Interrupted
-			}
-			if result.State != want {
-				t.Fatalf("root hides recovered child: %+v", result)
-			}
-		})
-	}
-}
-
-func TestUnknownChildAndCompletedSiblingNeverBecomeSuccessBatch(t *testing.T) {
-	h := newHarness(t, nil, 1)
-	root := h.run("code", "root")
-	root.State = domain.Running
-	h.apply(domain.Mutation{Runs: []*domain.Run{root}})
-	root.State = domain.Waiting
-	root.Nodes[0].State = "children"
-	// Seed children, and a genuine parent delegation so the root cannot run yet.
-	parentInv := &domain.Invocation{ID: domain.InvocationID(domain.NewID()), RunID: root.ID, NodeID: root.Nodes[0].ID, Phase: "delegated", AssistantSequence: 1, Pending: []model.Call{{ID: "delegate", Name: "create_task"}}, Thread: domain.Thread{ContextVersion: 1}}
-	root.Nodes[0].InvocationID = parentInv.ID
-	h.apply(domain.Mutation{Runs: []*domain.Run{root}, Invocations: []*domain.Invocation{parentInv}})
-	a, b := h.child(root, "code"), h.child(root, "code")
-	key, _ := pendingKey(parentInv)
-	h.apply(domain.Mutation{Delegations: []*domain.Delegation{{Key: key, ParentRunID: root.ID, InvocationID: parentInv.ID, Children: []domain.RunID{a.ID, b.ID}}}})
-	h.w.agent = agentFunc(func(ctx context.Context, id domain.InvocationID, _ string) agent.Outcome {
-		inv, err := h.db.Invocation(ctx, id)
-		if err != nil {
-			return agent.Outcome{Kind: "failed", Err: err}
-		}
-		if inv.RunID == a.ID {
-			return agent.Outcome{Kind: "failed", Err: domain.ErrUnknown}
-		}
-		return agent.Outcome{Kind: "completed", Result: "done"}
-	})
-	result := h.drive(root.ID)
-	if result.State != domain.Reconciling || h.load(b.ID).Nodes[0].State == "completed" {
-		t.Fatalf("unsafe batch committed: %+v", result)
 	}
 }

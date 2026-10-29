@@ -110,10 +110,6 @@ func (w *Runner) Drive(ctx context.Context, rootID domain.RunID) (*domain.Run, e
 				continue
 			}
 			switch run.State {
-			case domain.Reconciling:
-				blocked = errors.Join(blocked, domain.ErrUnknown)
-			case domain.Interrupted:
-				blocked = errors.Join(blocked, domain.ErrCheckpoint)
 			case domain.Cancelling, domain.Cancelled:
 				blocked = errors.Join(blocked, context.Canceled)
 			}
@@ -165,9 +161,6 @@ func (w *Runner) advance(ctx context.Context, id domain.RunID) ([]work, bool, er
 	}
 	if run.State == domain.Cancelling {
 		return nil, false, context.Canceled
-	}
-	if run.State == domain.Reconciling {
-		return nil, false, domain.ErrUnknown
 	}
 	if run.TemplateVersion != 1 {
 		return nil, false, fmt.Errorf("unsupported workflow version %d", run.TemplateVersion)
@@ -358,12 +351,6 @@ func (w *Runner) execute(ctx context.Context, rootID domain.RunID, batch []work)
 		if root.State.Terminal() || root.State == domain.Cancelling {
 			return context.Canceled
 		}
-		if root.State == domain.Reconciling {
-			return domain.ErrUnknown
-		}
-		if root.State == domain.Interrupted {
-			return domain.ErrCheckpoint
-		}
 		job := batch[i]
 		current, err := w.store.Run(ctx, job.runID)
 		if err != nil {
@@ -371,12 +358,6 @@ func (w *Runner) execute(ctx context.Context, rootID domain.RunID, batch []work)
 		}
 		if current.State.Terminal() || current.State == domain.Cancelling {
 			return context.Canceled
-		}
-		if current.State == domain.Reconciling {
-			return domain.ErrUnknown
-		}
-		if current.State == domain.Interrupted {
-			return domain.ErrCheckpoint
 		}
 		index := -1
 		for j, node := range current.Nodes {
@@ -708,12 +689,6 @@ func (w *Runner) delegationResult(ctx context.Context, id domain.InvocationID) (
 		if err != nil {
 			return "", err
 		}
-		if run.State == domain.Reconciling {
-			return "", domain.ErrUnknown
-		}
-		if run.State == domain.Interrupted {
-			return "", domain.ErrCheckpoint
-		}
 		if run.State == domain.Cancelling || run.State == domain.Cancelled {
 			return "", context.Canceled
 		}
@@ -731,84 +706,35 @@ func (w *Runner) failRun(ctx context.Context, run *domain.Run, reason error) err
 	return w.commit(ctx, domain.Mutation{Runs: []*domain.Run{run}, Events: []domain.Event{{RunID: run.ID, Kind: "failed", Content: run.Error}}})
 }
 
+// interrupt 把整棵运行树收敛到终态：取消记为 cancelled，其它原因（结果未知、
+// 检查点不可用）记为 failed。这里不做任何重放，外部副作用是否存在需要人看工作区。
 func (w *Runner) interrupt(ctx context.Context, rootID domain.RunID, reason error) (*domain.Run, error) {
-	unknown := errors.Is(reason, domain.ErrUnknown) || errors.Is(reason, model.ErrUnknown)
-	cancelled := false
-	// 仅重试恢复状态的更新。重新加载所有 CAS 参与者；绝不
-	// 重放执行或将过期的成功批次合并到取消操作上。
-	for tries := 0; tries < 8; tries++ {
-		runs, err := w.store.Runs(ctx)
-		if err != nil {
-			return nil, errors.Join(reason, err)
-		}
-		for _, run := range runs {
-			if run.RootRunID != rootID {
-				continue
-			}
-			unknown = unknown || run.State == domain.Reconciling
-			cancelled = cancelled || run.State == domain.Cancelling || run.State == domain.Cancelled
-			for _, node := range run.Nodes {
-				if node.InvocationID == 0 {
-					continue
-				}
-				inv, err := w.store.Invocation(ctx, node.InvocationID)
-				if err != nil {
-					return nil, errors.Join(reason, err)
-				}
-				if inv.Phase == "model_started" {
-					unknown = true
-				}
-				for _, call := range invocationCalls(inv) {
-					tool, err := w.store.Tool(ctx, call.key)
-					if errors.Is(err, domain.ErrNotFound) {
-						continue
-					}
-					if err != nil {
-						return nil, errors.Join(reason, err)
-					}
-					if tool.State == "started" || tool.State == "unknown" {
-						unknown = true
-					}
-				}
-			}
-		}
-		mutation := domain.Mutation{}
-		intermediate := false
-		for i := range runs {
-			run := &runs[i]
-			if run.RootRunID != rootID || run.State.Terminal() {
-				continue
-			}
-			target := domain.Interrupted
-			switch {
-			case unknown && run.State == domain.Queued:
-				intermediate = true // 排队中 -> 已中断 -> 对账中
-			case unknown:
-				target = domain.Reconciling
-			case cancelled && run.State != domain.Cancelling:
-				target, intermediate = domain.Cancelling, true
-			case cancelled:
-				target = domain.Cancelled
-			}
-			if run.State == target && run.Error == reason.Error() {
-				continue
-			}
-			run.State, run.Error = target, reason.Error()
-			mutation.Runs = append(mutation.Runs, run)
-			mutation.Events = append(mutation.Events, domain.Event{RunID: run.ID, Kind: "state", Content: string(run.State)})
-		}
-		if len(mutation.Runs) > 0 {
-			if err := w.commit(ctx, mutation); err != nil {
-				if errors.Is(err, domain.ErrConflict) {
-					continue
-				}
-				return nil, errors.Join(reason, err)
-			}
-		}
-		if intermediate {
+	runs, err := w.store.Runs(ctx)
+	if err != nil {
+		return nil, errors.Join(reason, err)
+	}
+	cancelled := errors.Is(reason, context.Canceled) || errors.Is(reason, context.DeadlineExceeded)
+	mutation := domain.Mutation{}
+	for i := range runs {
+		run := &runs[i]
+		if run.RootRunID != rootID || run.State.Terminal() {
 			continue
 		}
-		return w.store.Run(ctx, rootID)
+		target := domain.Failed
+		if cancelled || run.State == domain.Cancelling || run.State == domain.Cancelled {
+			target = domain.Cancelled
+		}
+		if run.State == target && run.Error == reason.Error() {
+			continue
+		}
+		run.State, run.Error = target, reason.Error()
+		mutation.Runs = append(mutation.Runs, run)
+		mutation.Events = append(mutation.Events, domain.Event{RunID: run.ID, Kind: "state", Content: string(run.State)})
 	}
-	return nil, errors.Join(reason, domain.ErrCheckpoint, domain.ErrConflict)
+	if len(mutation.Runs) > 0 {
+		if err := w.commit(ctx, mutation); err != nil {
+			return nil, errors.Join(reason, err)
+		}
+	}
+	return w.store.Run(ctx, rootID)
 }

@@ -9,15 +9,7 @@ run:
 build:
 	go build -o orca ./cmd/cli
 
-.PHONY: build-tui
-build-tui:
-	go build -o orca-tui ./cmd/tui
-
-.PHONY: run-tui
-run-tui:
-	go run ./cmd/tui
-
-.PHONY: test test-race vet bench test-live
+.PHONY: test test-race vet bench
 test:
 	go test ./...
 
@@ -28,10 +20,7 @@ vet:
 	go vet ./...
 
 bench:
-	go test -run '^$$' -bench . -benchmem ./internal/store ./internal/app
-
-test-live:
-	go test -tags live -run '^TestRequester' ./internal/llm
+	go test -run '^$$' -bench . -benchmem ./internal/app
 
 .PHONY: publish
 publish: build

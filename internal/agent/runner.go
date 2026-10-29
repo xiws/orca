@@ -143,7 +143,7 @@ func (r *Runner) Advance(ctx context.Context, id domain.InvocationID, resumeInpu
 			return out
 		}
 		// 运行已被取消或正在协调，终止执行
-		if run.State == domain.Cancelling || run.State.Terminal() || run.State == domain.Reconciling {
+		if run.State == domain.Cancelling || run.State.Terminal() {
 			out.Kind, out.Err = "failed", context.Canceled
 			return out
 		}

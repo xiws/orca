@@ -1,39 +1,39 @@
 # Orca
 
-Orca 是一个用 Go 编写的持久化 AI Agent 命令行工具。你给出一个目标，模型自主调用本地工具（读写文件、执行命令等）逐步完成；全过程以 durable run 模型保存，可随时恢复、取消、重试或继续。
+Orca 是一个用 Go 编写的 AI Agent 命令行工具。你给一个目标，模型自主调用本地工具（读写文件、执行命令等）逐步完成。需要你回答或审批时，它在**同一个进程内**直接问你要答案。
 
 ```bash
-$ orca "为 internal/llm/openai.go 生成单元测试文件"
+$ orca "为 internal/model 生成单元测试"
 ```
 
 ## 核心概念
 
 | 概念 | 说明 |
 | --- | --- |
-| **Session** | 用户交互时间线，包含工作区和标题 |
-| **Task** | 版本化的业务目标，包含约束和验收标准 |
+| **Session** | 一次交互的时间线（单个进程内） |
+| **Task** | 版本化的业务目标 |
 | **Run** | 任务版本的一次执行，包含工作流节点、策略与预算 |
-| **Invocation** | 单次角色执行，拥有私有线程、上下文版本与游标 |
+| **Invocation** | 单次角色执行，拥有私有消息线程 |
+
+一次 `orca "..."` 从提交跑到结束。状态只活在进程内存里，**进程退出即结束**：不跨进程、不跨崩溃恢复，
+也所以每次调用都是一个独立的新会话。
 
 ## 特性
 
-- **多 Provider**：支持兼容 OpenAI Chat Completions 协议的任意服务（Ollama 本地模型、DashScope 等），以及 otter Web 平台
-- **工作流模式**：ask / code / plan / agent / review / test / terminal / deliberate 八种模式，按任务性质选择
-- **内置工具**：read / write / edit / bash / create_task / request_input，模型按需调用，串行执行
-- **双重工具协议**：支持原生 function calling 的 Provider 直接下发工具声明；不支持的 Provider 走文本命令协议（如 otter）
-- **持久化执行**：SQLite WAL 模式存储，CAS 版本控制，崩溃恢复，append-only 事件流
-- **Run 生命周期**：排队 → 运行 → 等待输入/审批 → 完成/失败/取消/中断，均可跨进程恢复
-- **上下文注入**：`-f` 附加文件，`-s` 覆盖系统提示词
-- **流式输出**：实时 delta 事件推送，`run show --after` 可重放持久化事件
-- **TUI 界面**：基于 Bubble Tea 的交互式终端界面
+- **多 Provider**：兼容 OpenAI Chat Completions 协议的任意服务（Ollama、DashScope 等），以及 otter Web 平台
+- **工作流模式**：ask / code / plan / agent / review / test / terminal / deliberate
+- **内置工具**：read / write / edit / bash / create_task / request_input
+- **双重工具协议**：支持原生 function calling 的 Provider 直接下发工具声明；不支持的走文本命令协议
+- **交互式审批**：写文件、执行命令前在终端里直接问你，绑定的是那一份精确参数
+- **流式输出**：模型输出实时打印
+- **历史可读**：事件以 JSONL 追加到 `.orca/history.jsonl`，一行一个 JSON，`cat` / `jq` 直接看
 
 ## 构建
 
-要求 Go 1.26+。项目通过 `go.mod` 中的 `replace` 依赖同级的 [github.com/xiws/otter](../otter) 仓库，请保持两个仓库相邻存放。
+要求 Go 1.26+。
 
 ```bash
 make build          # 构建 ./orca
-make build-tui      # 构建 ./orca-tui
 make publish        # 构建并安装到 $GOPATH/bin
 ```
 
@@ -41,14 +41,13 @@ make publish        # 构建并安装到 $GOPATH/bin
 
 ```bash
 go build -o orca ./cmd/cli
-go build -o orca-tui ./cmd/tui
 ```
 
 ## 快速开始
 
 ```bash
 # 执行任务
-orca "为 internal/llm/openai.go 生成单元测试文件"
+orca "为 internal/model 生成单元测试文件"
 
 # 指定工作流模式
 orca -mode code "重构 internal/agent 包的错误处理"
@@ -58,33 +57,36 @@ orca -p otter -m chatgpt "这个项目做了什么"
 
 # 附加文件作为上下文（可重复）
 orca -f main.go -f README.md "解释这两个文件"
+```
 
-# 继续在同一个 session 中提交新任务
-orca -session 1234567890123456789 "接下来优化性能"
+执行过程中如果需要你：
 
-# 查看与管理运行
-orca run list                           # 列出所有 run
-orca run show 12345                     # 重放 run 的全部事件
-orca run resume 12345                   # 恢复中断的 run
-orca run respond 67890 "用户输入内容"     # 回复等待中的输入请求
-orca run approve 67890                  # 审批通过
-orca run cancel 12345                   # 取消运行
+```text
+--- approval required ---
+{
+  "kind": "approval",
+  "workspace": "/path/to/repo",
+  "tool": "bash",
+  "call_id": "call_1",
+  "arguments": {"command": "go test ./...", "workdir": "."},
+  "notice": "Approve only these exact arguments in this workspace. Bash is not a sandbox and can access outside this workspace."
+}
+approve? [y/N]
+```
 
-# 会话管理
-orca session list                       # 列出所有会话
-orca session show 12345                 # 查看会话详情
-orca session rm 12345                   # 删除会话
+回答 `y` 继续，其它任何输入都视为拒绝。`request_input` 类型则提示 `answer:`，读取一行文本。
+
+也可以把回答通过管道喂进去：
+
+```bash
+printf 'y\n' | orca "跑一遍测试并修掉失败"
 ```
 
 ## 命令行用法
 
 ```text
 Usage:
-  orca [options] PROMPT                      启动新任务
-  orca -session ID [options] PROMPT          在同一会话中提交新任务
-  orca run <command>                         管理运行
-  orca task revise ID INPUT                  创建任务修订版本
-  orca session <command>                     管理会话
+  orca [options] PROMPT
 ```
 
 ### 选项
@@ -96,42 +98,26 @@ Usage:
 | `-mode <name>` | 工作流模式：ask / code / plan / agent / review / test / terminal / deliberate |
 | `-s, --sp <file>` | 用文件内容覆盖系统提示词 |
 | `-f, --file <path>` | 附加文件到本次请求，可重复使用；文件以 `<file path="...">` 包裹后放入用户消息 |
-| `-session <id>` | 在同一会话中继续提交新任务 |
 | `-h, --help` | 显示完整帮助 |
 
 > `-p` / `-m` 缺省时使用 `setting.json` 中的默认 Provider 与模型。
 
-### run 子命令
+## 历史记录
 
-```text
-orca run list                              # 列出所有 run（别名 ls）
-orca run show ID [--after SEQUENCE]        # 重放持久化事件（含子 run）
-orca run resume ID                         # 恢复中断的 run
-orca run retry TASK_ID                     # 重试任务
-orca run respond INPUT_ID TEXT             # 回复等待中的输入
-orca run approve INPUT_ID                  # 审批通过
-orca run reject INPUT_ID                   # 审批拒绝
-orca run cancel ID                         # 取消运行
-orca run reconcile ID --note TEXT          # 手动确认 unknown 结果，标记失败，绝不重放
+每次执行的事件都会追加到 `./.orca/history.jsonl`，一行一个对象：
+
+```json
+{"time":1761600000,"seq":12,"run":123,"invocation":456,"kind":"tool","content":"bash go test ./..."}
 ```
 
-> 等待输入/审批的 run 会安全保存并正常退出，使用对应的 INPUT_ID 回复即可。
+直接读就行：
 
-### session 子命令
-
-```text
-orca session list                          # 列出所有会话（别名 ls）
-orca session show ID                       # 查看会话详情
-orca session import PATH --owner WORKSPACE # 导入旧版 JSON 会话
-orca session rm ID...                      # 删除指定会话（别名 remove / delete）
-orca session rm --all                      # 删除所有会话（别名 -a）
+```bash
+cat .orca/history.jsonl
+jq 'select(.kind=="failed")' .orca/history.jsonl
 ```
 
-### task 子命令
-
-```text
-orca task revise ID INPUT                  # 创建任务修订版本（不执行）
-```
+历史是只写的旁路：它不参与执行，也不用于恢复。进程退出后状态即消失，想继续就重新提交。
 
 ## 配置文件
 
@@ -143,7 +129,7 @@ orca task revise ID INPUT                  # 创建任务修订版本（不执�
 | `setting.json` | `./.orca/setting.json`、`~/.orca/setting.json` | 默认 Provider / 模型 |
 | `system_prompt.md` | `./.orca/system_prompt.md`、`~/.orca/system_prompt.md` | 系统提示词模板 |
 | `otter_prompt.md` | `./.orca/otter_prompt.md`、`~/.orca/otter_prompt.md` | otter 专用提示词 |
-| `state.sqlite3` | `./.orca/state.sqlite3` | SQLite 持久化存储 |
+| `history.jsonl` | `./.orca/history.jsonl` | 追加写入的事件历史 |
 
 `models.json` 按 Provider 组织模型列表：
 
@@ -185,28 +171,34 @@ orca task revise ID INPUT                  # 创建任务修订版本（不执�
 ## 架构
 
 ```
-cmd/cli          CLI 入口：参数解析、事件流展示
-cmd/tui          TUI 入口：Bubble Tea 交互界面
+cmd/cli          CLI：参数解析、事件展示、待输入时读标准输入
 internal/
   bootstrap      依赖装配：config → store → tools → providers → agent → workflow → app
   config         配置加载与合并，环境变量展开
-  domain         核心领域类型：Session / Task / Run / Invocation / Event / Mutation
-  store          SQLite 持久化层：WAL 模式、CAS 版本、崩溃恢复、旧数据导入
+  domain         领域类型：Session / Task / Run / Invocation / Event / Mutation
+  store          内存状态 + history.jsonl 追加日志
   model          模型协议：Client 接口、Message / Call / Tool / Cursor
   providers      Provider 实现：OpenAI 兼容、otter
   tools          工具网关：策略、审批、幂等重放、工作区隔离
-  agent          执行器：检查点驱动的 Invocation 循环
+  agent          执行器：Invocation 状态机
   workflow       工作流编排：节点推进、委派、验证、有限修复
   app            服务层：调度、发布订阅、后台 Worker
 ```
 
 ### 存储层
 
-SQLite WAL/FULL 模式，短事务，CAS 并发控制。所有写入通过 `Mutation` 原子提交，支持崩溃恢复（`Store.Recover`）与旧版 JSON 会话导入（`Store.Import`）。Schema 当前为 v2。
+状态全部在内存里，用一把互斥锁保护。`Store.Apply(Mutation)` 先校验整组变更再一次性写入，
+版本号仍是乐观锁（并发调用之间能检出冲突），但**没有事务、没有数据库、没有崩溃恢复**。
+唯一的持久化是追加写 `history.jsonl`，写失败不影响执行。
 
 ### 执行模型
 
-Run 形成树结构（`RootRunID` / `ParentRunID` / `Depth`），WorkflowRunner 编排整棵树，AgentRunner 处理单次 Invocation。ToolGateway 作为工具执行的唯一边界，负责策略检查、审批流程与幂等重放。
+Run 形成树结构（`RootRunID` / `ParentRunID` / `Depth`），WorkflowRunner 编排整棵树，
+AgentRunner 处理单次 Invocation。ToolGateway 是工具执行的唯一入口，负责策略检查、
+审批与幂等重放。
+
+外部副作用的结果如果是未知的（进程在 bash 执行期间被杀），这一轮直接失败，不做重放。
+工作区有没有被改动，看 `git status`。
 
 ## 内置工具
 
@@ -228,9 +220,7 @@ make run              # 运行 CLI --help
 make test             # 运行全部测试
 make test-race        # 带竞态检测的测试
 make vet              # 静态分析
-make bench            # 存储层与应用层基准测试
-make test-live        # 需要真实 LLM 的集成测试（需设置环境变量）
-make run-tui          # 运行 TUI
 ```
 
-更深入的设计文档见 [docs/](docs/)：工作流（[workflow.md](docs/workflow.md)）、状态机（[machine.md](docs/machine.md)）、命令协议（[command.md](docs/command.md)）、LLM 层（[llm.md](docs/llm.md)）、模式系统（[mode.md](docs/mode.md)）、TUI（[tui.md](docs/tui.md)）等。
+`docs/` 下的多数文档描述的是已经删除的实现，读之前先看 [docs/README.md](docs/README.md) 的状态索引；
+当前实现以 [quick.md](quick.md) 为准。

@@ -8,19 +8,19 @@ import (
 
 func TestRunTransitions(t *testing.T) {
 	for _, terminal := range []RunState{Succeeded, Failed, Cancelled} {
-		for _, next := range []RunState{Queued, Running, Waiting, Interrupted, Reconciling, Cancelling} {
+		for _, next := range []RunState{Queued, Running, Waiting, Cancelling} {
 			if CanTransition(terminal, next) {
 				t.Fatalf("terminal %s resurrected as %s", terminal, next)
 			}
 		}
 	}
-	for _, pair := range [][2]RunState{{Queued, Running}, {Running, Waiting}, {Waiting, Running}, {Running, Reconciling}, {Reconciling, Interrupted}, {Cancelling, Cancelled}} {
+	for _, pair := range [][2]RunState{{Queued, Running}, {Running, Waiting}, {Waiting, Running}, {Cancelling, Cancelled}, {Running, Cancelled}} {
 		if !CanTransition(pair[0], pair[1]) {
 			t.Fatalf("valid transition rejected: %v", pair)
 		}
 	}
-	if CanTransition(Queued, Succeeded) || CanTransition(Reconciling, Running) {
-		t.Fatal("unchecked execution or reconciliation transition")
+	if CanTransition(Queued, Succeeded) || CanTransition(Failed, Running) {
+		t.Fatal("unchecked execution or terminal resurrection")
 	}
 }
 

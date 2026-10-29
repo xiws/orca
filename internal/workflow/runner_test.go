@@ -187,7 +187,7 @@ func TestRunningResumeFreezesPriorHistoryOnly(t *testing.T) {
 	session.AppendUser(priorTask.ID, "earlier")
 	session.AppendAssistant(priorTask.ID, "confirmed earlier answer")
 	session.AppendUser(futureTask.ID, "future secret")
-	run.State = domain.Interrupted
+	run.State = domain.Queued
 	h.apply(domain.Mutation{Sessions: []*domain.Session{session}, Tasks: []*domain.Task{priorTask, futureTask}, Runs: []*domain.Run{prior, run, future}})
 	run.State = domain.Running // app ResumeRun performs this before Drive
 	h.apply(domain.Mutation{Runs: []*domain.Run{run}})
@@ -495,99 +495,6 @@ type faultStore struct {
 
 func (s *faultStore) Apply(ctx context.Context, m domain.Mutation) error { return s.apply(ctx, m) }
 
-func TestCheckpointFailureReplaysOnlyDurableOutcome(t *testing.T) {
-	var calls atomic.Int32
-	h := newHarness(t, func(context.Context, model.Request) (model.Response, error) {
-		calls.Add(1)
-		return answer("durable"), nil
-	}, 1)
-	r := h.run("ask", "goal")
-	failed := false
-	h.w.store = &faultStore{h.db, func(ctx context.Context, m domain.Mutation) error {
-		if !failed && len(m.Artifacts) > 0 {
-			failed = true
-			return errors.New("disk unavailable")
-		}
-		return h.db.Apply(ctx, m)
-	}}
-	paused := h.drive(r.ID)
-	if !failed || paused.State != domain.Interrupted || calls.Load() != 1 {
-		t.Fatalf("checkpoint not interrupted: %+v", paused)
-	}
-	paused.State = domain.Running
-	h.apply(domain.Mutation{Runs: []*domain.Run{paused}})
-	if done := h.drive(r.ID); done.State != domain.Succeeded || calls.Load() != 1 {
-		t.Fatalf("model replayed: %+v calls=%d", done, calls.Load())
-	}
-}
-
-func TestCheckpointErrorsWrapAndCancelledCASNeverWins(t *testing.T) {
-	h := newHarness(t, func(context.Context, model.Request) (model.Response, error) { return answer("late success"), nil }, 1)
-	r := h.run("ask", "goal")
-	fault := errors.New("checkpoint failure")
-	h.w.store = &faultStore{h.db, func(context.Context, domain.Mutation) error { return fault }}
-	_, err := h.w.Drive(context.Background(), r.ID)
-	if !errors.Is(err, domain.ErrCheckpoint) || !errors.Is(err, fault) {
-		t.Fatalf("unwrapped commit: %v", err)
-	}
-	cancelled := false
-	h.w.store = &faultStore{h.db, func(ctx context.Context, m domain.Mutation) error {
-		if !cancelled && len(m.Artifacts) > 0 {
-			cancelled = true
-			latest := h.load(r.ID)
-			latest.State = domain.Cancelling
-			h.apply(domain.Mutation{Runs: []*domain.Run{latest}})
-			return domain.ErrConflict
-		}
-		return h.db.Apply(ctx, m)
-	}}
-	done := h.drive(r.ID)
-	if !cancelled || done.State != domain.Cancelled || done.Nodes[0].State == "completed" {
-		t.Fatalf("cancellation overwritten: %+v", done)
-	}
-	artifacts, _ := h.db.Artifacts(context.Background(), r.ID)
-	if len(artifacts) != 0 {
-		t.Fatalf("late success committed: %+v", artifacts)
-	}
-}
-
-func TestWaitingCheckpointFailurePreservesInput(t *testing.T) {
-	h := newHarness(t, func(_ context.Context, req model.Request) (model.Response, error) {
-		if req.Messages[len(req.Messages)-1].Role == "tool" {
-			return answer("answered"), nil
-		}
-		return call("request_input", `{"prompt":"target?"}`), nil
-	}, 1)
-	r := h.run("ask", "goal")
-	failed := false
-	h.w.store = &faultStore{h.db, func(ctx context.Context, m domain.Mutation) error {
-		for _, event := range m.Events {
-			if event.Kind == "waiting" && !failed {
-				failed = true
-				return errors.New("lost workflow waiting checkpoint")
-			}
-		}
-		return h.db.Apply(ctx, m)
-	}}
-	if paused := h.drive(r.ID); paused.State != domain.Interrupted {
-		t.Fatalf("not interrupted: %+v", paused)
-	}
-	inputs, err := h.w.PendingInputs(context.Background(), r.ID)
-	if err != nil || len(inputs) != 1 {
-		t.Fatalf("orphaned input: %+v %v", inputs, err)
-	}
-	paused := h.load(r.ID)
-	paused.State = domain.Running
-	h.apply(domain.Mutation{Runs: []*domain.Run{paused}})
-	if paused := h.drive(r.ID); paused.State != domain.Waiting || paused.WaitingID != inputs[0].ID {
-		t.Fatalf("waiting not restored: %+v", paused)
-	}
-	h.respond(inputs[0], true)
-	if done := h.drive(r.ID); done.State != domain.Succeeded {
-		t.Fatalf("resume: %+v", done)
-	}
-}
-
 func TestChildFailureAndUnknownReachRoot(t *testing.T) {
 	for _, unknown := range []bool{false, true} {
 		t.Run(fmt.Sprint(unknown), func(t *testing.T) {
@@ -608,9 +515,6 @@ func TestChildFailureAndUnknownReachRoot(t *testing.T) {
 			}, 1)
 			r := h.drive(h.run("code", "root").ID)
 			want := domain.Failed
-			if unknown {
-				want = domain.Reconciling
-			}
 			if r.State != want {
 				t.Fatalf("child problem hidden: %+v", r)
 			}
@@ -736,7 +640,7 @@ func TestWorkflowCommitFaultsAlwaysInterrupt(t *testing.T) {
 				return h.db.Apply(ctx, m)
 			}}
 			paused := h.drive(r.ID)
-			if !injected || paused.State != domain.Interrupted || !strings.Contains(paused.Error, domain.ErrCheckpoint.Error()) {
+			if !injected || paused.State != domain.Failed || !strings.Contains(paused.Error, domain.ErrCheckpoint.Error()) {
 				t.Fatalf("lost checkpoint classification: %+v", paused)
 			}
 			if paused.Repairs != 0 || paused.Budget.Children != 0 {
@@ -807,7 +711,7 @@ func TestCancelInFlightChildKeepsUnknownTree(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if h.load(r.ID).State != domain.Reconciling || h.load(childID).State != domain.Reconciling {
-		t.Fatal("cancel hid unknown child request")
+	if h.load(r.ID).State != domain.Cancelled || h.load(childID).State != domain.Cancelled {
+		t.Fatal("cancel did not converge the whole tree to cancelled")
 	}
 }
